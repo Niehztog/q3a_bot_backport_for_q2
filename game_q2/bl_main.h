@@ -26,7 +26,7 @@ typedef struct bot_library_s
 #else
 	void *handle;
 #endif
-	bot_export_t funcs;				//functions exported from the bot library
+    botlib_export_t funcs;				//functions exported from the bot library
 	int users;							//number of bots using the library
 	struct bot_library_s *prev;	//links in the library list
 	struct bot_library_s *next;
@@ -47,7 +47,7 @@ typedef struct bot_globals_s
 	bot_state_t *botstates;			//bot states
 	bot_input_t *botinputs;			//bot inputs
 	qboolean *botnewinput;			//array with flags, true if input is new
-	bot_import_t gamebotimport;	//bot library import functions
+    botlib_import_t gamebotimport;	//bot library import functions
 	bot_library_t *firstbotlib;	//first bot libary
 	int nocldouble;					//no double client movement frames
 	//
@@ -86,7 +86,9 @@ int  BotLib_BotSetupClient(edict_t *ent, char *userinfo);
 void BotLib_BotShutdownClient(edict_t *client);
 void BotLib_BotMoveClient(edict_t *oldclient, edict_t *newclient);
 void BotLib_BotClientSettings(edict_t *client);
+#if 0
 void BotLib_BotSettings(edict_t *bot, bot_settings_t *settings);
+#endif
 void BotLib_BotLibVarSet(char *var_name, char *value);
 void BotLib_BotStartFrame(float time);
 void BotLib_BotUpdateClient(edict_t *bot);

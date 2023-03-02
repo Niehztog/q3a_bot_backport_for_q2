@@ -49,7 +49,7 @@
 #endif //CH
 
 #ifdef BOT
-#include "botlib.h"
+#include "../game_q3/botlib.h"
 #include "p_menulib.h"
 #include "p_botmenu.h"
 #include "bl_debug.h"

@@ -304,7 +304,7 @@ qboolean BotStarted(edict_t *bot)
 	//get the library the bot uses
 	lib = GetBotLibrary(bot);
 	//if the library is initialized
-	if (lib->funcs.BotLibraryInitialized())
+	if (lib->funcs.BotLibraryInitialized("BotStarted"))
 	{
 		//NOTE: set the inuse flag to false because the bot isn't loaded
 		//			from a savegame
@@ -340,9 +340,7 @@ void BotLib_BotLoadMap(char *mapname)
 	for (lib = botglobals.firstbotlib; lib; lib = nextlib)
 	{
 		nextlib = lib->next;
-		errno = lib->funcs.BotLoadMap(mapname, MAX_MODELINDEXES, modelindexes,
-												MAX_SOUNDINDEXES, soundindexes,
-												MAX_IMAGEINDEXES, imageindexes);
+		errno = lib->funcs.BotLibLoadMap(mapname);
 		if (errno != BLERR_NOERROR)
 		{
 			int i;
@@ -382,11 +380,13 @@ int BotLib_BotSetupClient(edict_t *ent, char *userinfo)
 	strncpy(settings.characterfile, s, MAX_FILEPATH-1); //Riv++
 	settings.characterfile[MAX_FILEPATH-1] = '\0';
 	//
-	s = Info_ValueForKey(userinfo, "charname");
+    #if 0
+    s = Info_ValueForKey(userinfo, "charname");
 	strncpy(settings.charactername, s, MAX_CHARACTERNAME-1); //Riv++
 	settings.charactername[MAX_CHARACTERNAME-1] = '\0';
+    #endif
 	//
-	return lib->funcs.BotSetupClient(DF_ENTCLIENT(ent), &settings);
+	return lib->funcs.ai.BotLoadCharacter(settings.characterfile, 1.0);
 } //end of the function BotLib_BotSetupClient
 //==========================================================================
 //
@@ -400,7 +400,7 @@ void BotLib_BotShutdownClient(edict_t *client)
 
 	lib = GetBotLibrary(client);
 	if (!lib) return;
-	lib->funcs.BotShutdownClient(DF_ENTCLIENT(client));
+	lib->funcs.ai.BotFreeCharacter(DF_ENTCLIENT(client));
 } //end of the function BotLib_BotShutDownClient
 //==========================================================================
 //
@@ -414,7 +414,7 @@ void BotLib_BotMoveClient(edict_t *oldclient, edict_t *newclient)
 
 	lib = GetBotLibrary(oldclient);
 	if (!lib) return;
-	lib->funcs.BotMoveClient(DF_ENTCLIENT(oldclient), DF_ENTCLIENT(newclient));
+	lib->funcs.ai.BotMoveCharacter(DF_ENTCLIENT(oldclient), DF_ENTCLIENT(newclient));
 } //end of the function BotLib_BotMoveClient
 //==========================================================================
 //
@@ -422,6 +422,7 @@ void BotLib_BotMoveClient(edict_t *oldclient, edict_t *newclient)
 // Returns:					-
 // Changes Globals:		-
 //==========================================================================
+#if 0
 void BotLib_BotClientSettings(edict_t *ent)
 {
 	bot_clientsettings_t settings;
@@ -445,6 +446,7 @@ void BotLib_BotClientSettings(edict_t *ent)
 		lib->funcs.BotClientSettings(DF_ENTCLIENT(ent), &settings);
 	} //end for
 } //end of the function BotLib_BotClientSettings
+#endif
 //==========================================================================
 //
 // Parameter:				-
@@ -469,9 +471,11 @@ void BotLib_UpdateAllClientSettings(void)
 // Returns:					-
 // Changes Globals:		-
 //==========================================================================
+#if 0
 void BotLib_BotSettings(edict_t *bot, bot_settings_t *settings)
 {
 } //end of the function BotLib_BotSettings
+#endif
 //==========================================================================
 // sends a client (state) update to the bot library
 //
@@ -602,7 +606,7 @@ void BotLib_BotUpdateEntity(edict_t *ent)
 
 	for (lib = botglobals.firstbotlib; lib; lib = lib->next)
 	{
-		if (lib->funcs.BotLibraryInitialized())
+		if (lib->funcs.BotLibraryInitialized("BotLib_BotUpdateEntity"))
 		{
 			lib->funcs.BotUpdateEntity(DF_ENTNUMBER(ent), &bue);
 		} //end if
@@ -637,7 +641,7 @@ void BotLib_BotAddSound(edict_t *ent, int channel, int soundindex, float volume,
 	entnum = DF_ENTNUMBER(ent);
 	for (lib = botglobals.firstbotlib; lib; lib = lib->next)
 	{
-		if (lib->funcs.BotLibraryInitialized())
+		if (lib->funcs.BotLibraryInitialized("BotLib_BotAddSound"))
 		{
 			lib->funcs.BotAddSound(ent->s.origin, entnum, channel, soundindex, volume, attenuation, timeofs);
 		} //end if
@@ -964,9 +968,7 @@ int BotInitLibrary(bot_library_t *lib)
 	errno = lib->funcs.BotSetupLibrary();
 	if (errno != BLERR_NOERROR) return false;
 	//load the map
-	errno = lib->funcs.BotLoadMap(level.mapname, MAX_MODELINDEXES, modelindexes,
-																MAX_SOUNDINDEXES, soundindexes,
-																MAX_IMAGEINDEXES, imageindexes);
+	errno = lib->funcs.BotLibLoadMap(level.mapname);
 	if (errno != BLERR_NOERROR) return false;
 #ifdef TOURNEY
 	// Handle the Tourney hook --JKK
@@ -1041,11 +1043,11 @@ bot_library_t *BotLoadLibrary(char *botlibdir)
 	} //end if
 	else
 	{
-		GetBotAPI = (PFNGetBotAPI) GetProcAddress(botlibhandle, "GetBotAPI");
+		GetBotAPI = (PFNGetBotAPI) GetProcAddress(botlibhandle, "GetBotLibAPI");
 		if (GetBotAPI == NULL)
 		{
 			FreeLibrary(botlibhandle);
-			gi.dprintf("couldn't find GetBotAPI in %s\n", botlibdir);
+			gi.dprintf("couldn't find GetBotLibAPI in %s\n", botlibdir);
 		} //end if
 		else
 		{
@@ -1090,12 +1092,12 @@ bot_library_t *BotLoadLibrary(char *botlibdir)
 	} //end if
 	else
 	{
-		GetBotAPI = dlsym(botlibhandle, "GetBotAPI");
+		GetBotAPI = dlsym(botlibhandle, "GetBotLibAPI");
 		e = dlerror();
 		if (e)
 		{
 			dlclose(botlibhandle);
-			gi.dprintf("couldn't find GetBotAPI in %s: %s\n", botlibdir, e);
+			gi.dprintf("couldn't find GetBotLibAPI in %s: %s\n", botlibdir, e);
 		} //end if
 		else
 		{
@@ -1144,7 +1146,8 @@ void BotUnloadAllLibraries(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-bot_library_t *BotUseLibrary(char *path)
+bot_library_t *
+BotUseLibrary(char *path)
 {
 	cvar_t *cvar;
 	char botlibdir[MAX_PATH] = "";

@@ -31,6 +31,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define	BOTLIB_API_VERSION		2
 
+typedef FILE* fileHandle_t;
+#define QDECL
+typedef enum {
+    FS_READ,
+    FS_WRITE,
+    FS_APPEND,
+    FS_APPEND_SYNC
+} fsMode_t;
+#ifndef __Q_SHARED_H
+#define MAX_TOKENLENGTH		1024
+typedef struct pc_token_s
+{
+    int type;
+    int subtype;
+    int intvalue;
+    float floatvalue;
+    char string[MAX_TOKENLENGTH];
+} pc_token_t;
+#endif //!_Q_SHARED_H
+
 struct aas_clientmove_s;
 struct aas_entityinfo_s;
 struct aas_areainfo_s;
@@ -62,6 +82,12 @@ struct weaponinfo_s;
 //console message types
 #define CMS_NORMAL				0
 #define CMS_CHAT				1
+
+//some maxs
+#define MAX_NETNAME				16
+#define MAX_CLIENTSKINNAME		128
+#define MAX_FILEPATH			144
+#define MAX_CHARACTERNAME		144
 
 //botlib error codes
 #define BLERR_NOERROR					0	//no error
@@ -141,6 +167,44 @@ typedef struct bsp_trace_s
 } bsp_trace_t;
 
 #endif	// BSPTRACE
+
+//bot settings
+typedef struct bot_settings_s
+{
+    char characterfile[MAX_FILEPATH];
+    float skill;
+    char team[MAX_FILEPATH];
+} bot_settings_t;
+
+//bot client update
+typedef struct bot_updateclient_s
+{
+    pmtype_t	pm_type;			// movement type
+    vec3_t	origin;			// client origin
+    vec3_t	velocity;		// client velocity
+    byte		pm_flags;		// ducked, jump_held, etc
+    byte		pm_time;			// each unit = 8 ms
+    float		gravity;			// current gravity
+    vec3_t	delta_angles;	// add to command angles to get view direction
+    // changed by spawns, rotating objects, and teleporters
+    //====================================
+    vec3_t	viewangles;		// for fixed views
+    vec3_t	viewoffset;		// add to origin for view coordinates
+    vec3_t	kick_angles;	// add to view direction to get render angles
+    // set by weapon kicks, pain effects, etc
+    vec3_t	gunangles;		// angles of the gun
+    vec3_t	gunoffset;		// offset of the gun relative to the client origin
+    int		gunindex;		// gun model number
+    int		gunframe;		// gun model frame number
+
+    float		blend[4];		// rgba full screen effect
+    float		fov;				// horizontal field of view
+    int		rdflags;			// refdef flags
+    short		stats[MAX_STATS];
+    //====================================
+    int		inventory[MAX_ITEMS];
+    //
+} bot_updateclient_t;
 
 //entity state
 typedef struct bot_entitystate_s
@@ -303,6 +367,8 @@ typedef struct ai_export_s
 	//-----------------------------------
 	int		(*BotLoadCharacter)(char *charfile, float skill);
 	void	(*BotFreeCharacter)(int character);
+    //move a client to another client number returns BLERR_
+    int (*BotMoveCharacter)(int handle, int newHandle);
 	float	(*Characteristic_Float)(int character, int index);
 	float	(*Characteristic_BFloat)(int character, int index, float min, float max);
 	int		(*Characteristic_Integer)(int character, int index);
@@ -407,6 +473,8 @@ typedef struct botlib_export_s
 	int (*BotLibSetup)(void);
 	//shutdown the bot library, returns BLERR_
 	int (*BotLibShutdown)(void);
+    //returns true if the bot library has been initialized, false otherwise
+    qboolean (*BotLibraryInitialized)(char *str);
 	//sets a library variable returns BLERR_
 	int (*BotLibVarSet)(char *var_name, char *value);
 	//gets a library variable returns BLERR_

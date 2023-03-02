@@ -788,3 +788,28 @@ void BotShutdownCharacters(void)
 	} //end for
 } //end of the function BotShutdownCharacters
 
+void BotMoveCharacter(int handle, int newHandle)
+{
+    if (handle <= 0 || handle > MAX_CLIENTS)
+    {
+        botimport.Print(PRT_FATAL, "character handle %d out of range\n", handle);
+        return;
+    } //end if
+    if (newHandle <= 0 || newHandle > MAX_CLIENTS)
+    {
+        botimport.Print(PRT_FATAL, "new character handle %d out of range\n", newHandle);
+        return;
+    } //end if
+    if (botcharacters[handle] == NULL)
+    {
+        botimport.Print(PRT_FATAL, "invalid character %d\n", handle);
+        return;
+    } //end if
+    if (botcharacters[newHandle] != NULL)
+    {
+        botimport.Print(PRT_FATAL, "new character handle %d already used\n", newHandle);
+        return;
+    } //end if
+    botcharacters[newHandle] = botcharacters[handle];
+    botcharacters[handle] = NULL;
+}
