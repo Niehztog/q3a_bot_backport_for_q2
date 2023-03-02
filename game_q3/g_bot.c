@@ -91,7 +91,7 @@ int G_ParseInfos( char *buf, int max, char *infos[] ) {
 
 		info[0] = '\0';
 		while ( 1 ) {
-			token = COM_ParseExt( &buf, qtrue );
+			token = COM_ParseExt( &buf, true );
 			if ( !token[0] ) {
 				Com_Printf( "Unexpected end of info file\n" );
 				break;
@@ -101,7 +101,7 @@ int G_ParseInfos( char *buf, int max, char *infos[] ) {
 			}
 			Q_strncpyz( key, token, sizeof( key ) );
 
-			token = COM_ParseExt( &buf, qfalse );
+			token = COM_ParseExt( &buf, false );
 			if ( !token[0] ) {
 				strcpy( token, "<NULL>" );
 			}
@@ -323,9 +323,9 @@ int G_RemoveRandomBot( int team ) {
 		strcpy(netname, cl->pers.netname);
 		Q_CleanStr(netname);
 		trap_SendConsoleCommand( EXEC_INSERT, va("kick %s\n", netname) );
-		return qtrue;
+		return true;
 	}
-	return qfalse;
+	return false;
 }
 
 /*
@@ -551,10 +551,10 @@ qboolean G_BotConnect( int clientNum, qboolean restart ) {
 
 	if (!BotAISetupClient( clientNum, &settings, restart )) {
 		trap_DropClient( clientNum, "BotAISetupClient failed" );
-		return qfalse;
+		return false;
 	}
 
-	return qtrue;
+	return true;
 }
 
 
@@ -680,13 +680,13 @@ static void G_AddBot( const char *name, float skill, const char *team, int delay
 
 	bot = &g_entities[ clientNum ];
 	bot->r.svFlags |= SVF_BOT;
-	bot->inuse = qtrue;
+	bot->inuse = true;
 
 	// register the userinfo
 	trap_SetUserinfo( clientNum, userinfo );
 
 	// have it connect to the game as a normal client
-	if ( ClientConnect( clientNum, qtrue, qtrue ) ) {
+	if ( ClientConnect( clientNum, true, true ) ) {
 		return;
 	}
 
