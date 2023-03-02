@@ -3,7 +3,7 @@
  *
  * desc:		IO on .zip files using portions of zlib 
  *
- * $Archive: /MissionPack/code/qcommon/unzip.c $
+ * $Archive: /MissionPack/code/qcommon_q3/unzip.c $
  *
  *****************************************************************************/
 

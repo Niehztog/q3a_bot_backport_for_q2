@@ -25,14 +25,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //#endif //BOTLIB
 
 #ifdef BOTLIB
-#include "q_shared.h"
-#include "qfiles.h"
-#include "botlib.h"
+#include "../game_q3/q_shared.h"
+#include "../qcommon_q3/qfiles.h"
+#include "../game_q3/botlib.h"
 #include "l_log.h"
-#include "l_libvar.h"
-#include "l_memory.h"
-//#include "l_utils.h"
-#include "be_interface.h"
+#include "../botlib/l_libvar.h"
+#include "../botlib/l_memory.h"
+#include "l_utils.h"
+#include "../botlib/be_interface.h"
 #else //BOTLIB
 #include "qbsp.h"
 #include "l_mem.h"
