@@ -1,5 +1,8 @@
 #include "g_local.h"
 
+#ifdef CLIENTLAG
+#include "p_lag.h"
+#endif //CLIENTLAG
 
 
 /*
@@ -32,6 +35,21 @@ void MoveClientToIntermission (edict_t *ent)
 	ent->client->grenade_blew_up = false;
 	ent->client->grenade_time = 0;
 
+#ifdef XATRIX
+	// RAFAEL
+	ent->client->quadfire_framenum = 0;
+	
+	// RAFAEL
+	ent->client->trap_blew_up = false;
+	ent->client->trap_time = 0;
+#endif //XATRIX
+#ifdef ROGUE
+	ent->client->ps.rdflags &= ~RDF_IRGOGGLES;		// PGM
+	ent->client->ir_framenum = 0;					// PGM
+	ent->client->nuke_framenum = 0;					// PMM
+	ent->client->double_framenum = 0;				// PMM
+#endif //ROGUE
+
 	ent->viewheight = 0;
 	ent->s.modelindex = 0;
 	ent->s.modelindex2 = 0;
@@ -43,6 +61,9 @@ void MoveClientToIntermission (edict_t *ent)
 
 	// add the layout
 
+#ifdef BOT
+	if (!(ent->flags & FL_BOT))
+#endif //BOT
 	if (deathmatch->value || coop->value)
 	{
 		DeathmatchScoreboardMessage (ent, NULL);
@@ -58,6 +79,11 @@ void BeginIntermission (edict_t *targ)
 
 	if (level.intermissiontime)
 		return;		// already activated
+
+#ifdef ZOID
+	if (deathmatch->value && ctf->value)
+		CTFCalcScores();
+#endif //ZOID
 
 	game.autosaved = false;
 
@@ -157,6 +183,14 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 	edict_t		*cl_ent;
 	char	*tag;
 
+#ifdef ZOID
+	if (ctf->value)
+	{
+		CTFScoreboardMessage (ent, killer);
+		return;
+	}
+#endif //ZOID
+
 	// sort the clients by score
 	total = 0;
 	for (i=0 ; i<game.maxclients ; i++)
@@ -164,6 +198,9 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 		cl_ent = g_edicts + 1 + i;
 		if (!cl_ent->inuse || game.clients[i].resp.spectator)
 			continue;
+#ifdef OBSERVER
+		if (cl_ent->flags & FL_OBSERVER) continue;
+#endif //OBSERVER
 		score = game.clients[i].resp.score;
 		for (j=0 ; j<total ; j++)
 		{
@@ -205,6 +242,16 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 			tag = "tag2";
 		else
 			tag = NULL;
+
+#ifdef ROGUE
+		// allow new DM games to override the tag picture
+		if (gamerules && gamerules->value)
+		{
+			if(DMGame.DogTag)
+				DMGame.DogTag(cl_ent, killer, &tag);
+		}
+#endif //ROGUE
+
 		if (tag)
 		{
 			Com_sprintf (entry, sizeof(entry),
@@ -215,6 +262,22 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 			strcpy (string + stringlength, entry);
 			stringlength += j;
 		}
+
+#ifdef CH
+		if (ch->value)
+		{
+			Com_sprintf (entry, sizeof(entry),
+				"xv %i yv %i picn %s ",x+32, y, ColorImageName(cl_ent->client->chcolor));
+			j = strlen(entry);
+			if (stringlength + j > 1024) break;
+			strcpy (string + stringlength, entry);
+			stringlength += j;
+		} //end if
+#endif //CH
+
+#ifdef CLIENTLAG
+		Lag_SetClientPing(cl_ent);
+#endif //CLIENTLAG
 
 		// send the layout
 		Com_sprintf (entry, sizeof(entry),
@@ -258,6 +321,13 @@ void Cmd_Score_f (edict_t *ent)
 {
 	ent->client->showinventory = false;
 	ent->client->showhelp = false;
+
+#ifdef ZOID
+	if (ent->client->menu) PMenu_Close(ent);
+#endif //ZOID
+#ifdef BOT
+	if (ent->client->showmenu) CloseBotMenu(ent);
+#endif //BOT
 
 	if (!deathmatch->value && !coop->value)
 		return;
@@ -432,6 +502,23 @@ void G_SetStats (edict_t *ent)
 		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_quad");
 		ent->client->ps.stats[STAT_TIMER] = (ent->client->quad_framenum - level.framenum)/10;
 	}
+#ifdef XATRIX
+	// RAFAEL
+	else if (ent->client->quadfire_framenum > level.framenum)
+	{
+		// note to self
+		// need to change imageindex
+		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_quadfire");
+		ent->client->ps.stats[STAT_TIMER] = (ent->client->quadfire_framenum - level.framenum)/10;
+	}
+#endif //XATRIX
+#ifdef ROGUE
+	else if (ent->client->double_framenum > level.framenum)
+	{
+		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_double");
+		ent->client->ps.stats[STAT_TIMER] = (ent->client->double_framenum - level.framenum)/10;
+	}
+#endif //ROGUE
 	else if (ent->client->invincible_framenum > level.framenum)
 	{
 		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_invulnerability");
@@ -447,6 +534,26 @@ void G_SetStats (edict_t *ent)
 		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_rebreather");
 		ent->client->ps.stats[STAT_TIMER] = (ent->client->breather_framenum - level.framenum)/10;
 	}
+#ifdef ROGUE
+	else if (ent->client->owned_sphere)
+	{
+		if(ent->client->owned_sphere->spawnflags == 1)			// defender
+			ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_defender");
+		else if(ent->client->owned_sphere->spawnflags == 2)		// hunter
+			ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_hunter");
+		else if(ent->client->owned_sphere->spawnflags == 4)		// vengeance
+			ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_vengeance");
+		else													// error case
+			ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("i_fixme");
+
+		ent->client->ps.stats[STAT_TIMER] = (int)(ent->client->owned_sphere->wait - level.time);
+	}
+	else if (ent->client->ir_framenum > level.framenum)
+	{
+		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("p_ir");
+		ent->client->ps.stats[STAT_TIMER] = (ent->client->ir_framenum - level.framenum)/10;
+	}
+#endif //ROGUE
 	else
 	{
 		ent->client->ps.stats[STAT_TIMER_ICON] = 0;
@@ -501,6 +608,13 @@ void G_SetStats (edict_t *ent)
 		ent->client->ps.stats[STAT_HELPICON] = 0;
 
 	ent->client->ps.stats[STAT_SPECTATOR] = 0;
+
+#ifdef ZOID
+	if (ctf->value) SetCTFStats(ent);
+#endif //ZOID
+#ifdef CH
+	if (ch->value) ColoredHitmanStats(ent);
+#endif //CH
 }
 
 /*

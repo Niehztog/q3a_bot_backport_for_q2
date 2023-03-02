@@ -1,4 +1,10 @@
+//===================
+// ROGUE
+//===================
+
 #include "g_local.h"
+
+#ifdef ROGUE
 
 #define INCLUDE_ETF_RIFLE		1
 #define INCLUDE_PROX			1
@@ -9,12 +15,12 @@
 #define INCLUDE_TESLA			1
 #define INCLUDE_BEAMS			1
 
-extern void check_dodge (edict_t *self, vec3_t start, vec3_t dir, int speed);
-extern void hurt_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf);
-extern void droptofloor (edict_t *ent);
-extern void Grenade_Explode (edict_t *ent);
+void check_dodge (edict_t *self, vec3_t start, vec3_t dir, int speed);
+void hurt_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf);
+void droptofloor (edict_t *ent);
+void Grenade_Explode (edict_t *ent);
 
-extern void drawbbox (edict_t *ent);
+void drawbbox (edict_t *ent);
 
 #ifdef INCLUDE_ETF_RIFLE
 /*
@@ -1870,12 +1876,12 @@ static void fire_beams (edict_t *self, vec3_t start, vec3_t aimdir, vec3_t offse
 
 /*
 =================
-fire_heat
+fire_heat2
 
 Fires a single heat beam.  Zap.
 =================
 */
-void fire_heat (edict_t *self, vec3_t start, vec3_t aimdir, vec3_t offset, int damage, int kick, qboolean monster)
+void fire_heat2(edict_t *self, vec3_t start, vec3_t aimdir, vec3_t offset, int damage, int kick, qboolean monster)
 {
 	if (monster)
 		fire_beams (self, start, aimdir, offset, damage, kick, TE_MONSTER_HEATBEAM, TE_HEATBEAM_SPARKS, MOD_HEATBEAM);
@@ -1958,7 +1964,7 @@ void blaster2_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t 
 	G_FreeEdict (self);
 }
 
-void fire_blaster2 (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int effect, qboolean hyper)
+void fire_blaster2 (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int effect, qboolean vhyper)
 {
 	edict_t	*bolt;
 	trace_t	tr;
@@ -2278,4 +2284,6 @@ void fire_tracker (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 		VectorMA (bolt->s.origin, -10, dir, bolt->s.origin);
 		bolt->touch (bolt, tr.ent, NULL, NULL);
 	}
-}	
+}
+
+#endif //ROGUE

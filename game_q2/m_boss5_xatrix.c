@@ -1,3 +1,4 @@
+
 /*
 ==============================================================================
 
@@ -7,6 +8,9 @@ boss5
 */
 
 #include "g_local.h"
+
+#ifdef XATRIX
+
 #include "m_supertank.h"
 
 qboolean visible (edict_t *self, edict_t *other);
@@ -703,3 +707,5 @@ void SP_monster_boss5 (edict_t *self)
 
 	walkmonster_start(self);
 }
+
+#endif //XATRIX

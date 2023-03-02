@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 /*
 ==============================================================================
 
@@ -7,7 +11,10 @@ stalker
 */
 
 #include "g_local.h"
-#include "m_stalker.h"
+
+#ifdef ROGUE
+
+#include "m_stalker_rogue.h"
 #include <float.h>
 
 static int	sound_pain;
@@ -1212,3 +1219,5 @@ void SP_monster_stalker (edict_t *self)
 
 	walkmonster_start (self);
 }
+
+#endif //ROGUE

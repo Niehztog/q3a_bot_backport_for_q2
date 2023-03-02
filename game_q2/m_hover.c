@@ -20,18 +20,47 @@ static int	sound_sight;
 static int	sound_search1;
 static int	sound_search2;
 
+#ifdef ROGUE
+// daedalus sounds
+static int	daed_sound_pain1;
+static int	daed_sound_pain2;
+static int	daed_sound_death1;
+static int	daed_sound_death2;
+static int	daed_sound_sight;
+static int	daed_sound_search1;
+static int	daed_sound_search2;
+#endif //ROGUE
 
 void hover_sight (edict_t *self, edict_t *other)
 {
-	gi.sound (self, CHAN_VOICE, sound_sight, 1, ATTN_NORM, 0);
+#ifdef ROGUE
+	// PMM - daedalus sounds
+	if (self->mass >= 225)
+		gi.sound (self, CHAN_VOICE, daed_sound_sight, 1, ATTN_NORM, 0);
+	else
+#endif //ROGUE
+		gi.sound (self, CHAN_VOICE, sound_sight, 1, ATTN_NORM, 0);
 }
 
 void hover_search (edict_t *self)
 {
-	if (random() < 0.5)
-		gi.sound (self, CHAN_VOICE, sound_search1, 1, ATTN_NORM, 0);
+#ifdef ROGUE
+	// PMM - daedalus sounds
+	if (self->mass < 225)
+	{
+		if (random() < 0.5)
+			gi.sound (self, CHAN_VOICE, sound_search1, 1, ATTN_NORM, 0);
+		else
+			gi.sound (self, CHAN_VOICE, sound_search2, 1, ATTN_NORM, 0);
+	}
 	else
-		gi.sound (self, CHAN_VOICE, sound_search2, 1, ATTN_NORM, 0);
+#endif //ROGUE
+	{
+		if (random() < 0.5)
+			gi.sound (self, CHAN_VOICE, sound_search1, 1, ATTN_NORM, 0);
+		else
+			gi.sound (self, CHAN_VOICE, sound_search2, 1, ATTN_NORM, 0);
+	}
 }
 
 
@@ -399,6 +428,36 @@ mframe_t hover_frames_end_attack [] =
 };
 mmove_t hover_move_end_attack = {FRAME_attak107, FRAME_attak108, hover_frames_end_attack, hover_run};
 
+#ifdef ROGUE
+/* PMM - circle strafing code */
+
+mframe_t hover_frames_start_attack2 [] =
+{
+	ai_charge,	15,	NULL,
+	ai_charge,	15,	NULL,
+	ai_charge,	15,	NULL
+};
+mmove_t hover_move_start_attack2 = {FRAME_attak101, FRAME_attak103, hover_frames_start_attack2, hover_attack};
+
+mframe_t hover_frames_attack2 [] =
+{
+	ai_charge,	10,	hover_fire_blaster,
+	ai_charge,	10,	hover_fire_blaster,
+	ai_charge,	10,		hover_reattack,
+};
+mmove_t hover_move_attack2 = {FRAME_attak104, FRAME_attak106, hover_frames_attack2, NULL};
+
+
+mframe_t hover_frames_end_attack2 [] =
+{
+	ai_charge,	15,	NULL,
+	ai_charge,	15,	NULL
+};
+mmove_t hover_move_end_attack2 = {FRAME_attak107, FRAME_attak108, hover_frames_end_attack2, hover_run};
+
+// end of circle strafe
+#endif //ROGUE
+
 void hover_reattack (edict_t *self)
 {
 	if (self->enemy->health > 0 )
@@ -420,6 +479,11 @@ void hover_fire_blaster (edict_t *self)
 	vec3_t	dir;
 	int		effect;
 
+#ifdef ROGUE
+	if(!self->enemy || !self->enemy->inuse)		//PGM
+		return;									//PGM
+#endif //ROGUE
+
 	if (self->s.frame == FRAME_attak104)
 		effect = EF_HYPERBLASTER;
 	else
@@ -433,6 +497,16 @@ void hover_fire_blaster (edict_t *self)
 	VectorSubtract (end, start, dir);
 
 	monster_fire_blaster (self, start, dir, 1, 1000, MZ2_HOVER_BLASTER_1, effect);
+
+#ifdef ROGUE
+//PGM	- daedalus fires blaster2
+	if(self->mass < 200)
+		monster_fire_blaster (self, start, dir, 1, 1000, MZ2_HOVER_BLASTER_1, effect);
+	else
+		monster_fire_blaster2 (self, start, dir, 1, 1000, MZ2_DAEDALUS_BLASTER, EF_BLASTER);
+		// fixme - different muzzle flash
+//PGM
+#endif //ROGUE
 }
 
 
@@ -461,7 +535,38 @@ void hover_start_attack (edict_t *self)
 
 void hover_attack(edict_t *self)
 {
+#ifdef ROGUE
+	float chance;
+/*	if (random() <= 0.5)	
+		self->monsterinfo.currentmove = &flyer_move_attack1;
+	else */
+	// 0% chance of circle in easy
+	// 50% chance in normal
+	// 75% chance in hard
+	// 86.67% chance in nightmare
+	if (!skill->value)
+		chance = 0;
+	else
+		chance = 1.0 - (0.5/(float)(skill->value));
+
+	if (self->mass > 150)  // the daedalus strafes more
+		chance += 0.1;
+
+	if (random() > chance)
+	{
+		self->monsterinfo.currentmove = &hover_move_attack1;
+		self->monsterinfo.attack_state = AS_STRAIGHT;
+	}
+	else // circle strafe
+	{
+		if (random () <= 0.5) // switch directions
+			self->monsterinfo.lefty = 1 - self->monsterinfo.lefty;
+		self->monsterinfo.currentmove = &hover_move_attack2;
+		self->monsterinfo.attack_state = AS_SLIDING;
+	}
+#else //ROGUE
 	self->monsterinfo.currentmove = &hover_move_attack1;
+#endif //ROGUE
 }
 
 
@@ -482,19 +587,53 @@ void hover_pain (edict_t *self, edict_t *other, float kick, int damage)
 	{
 		if (random() < 0.5)
 		{
-			gi.sound (self, CHAN_VOICE, sound_pain1, 1, ATTN_NORM, 0);
+#ifdef ROGUE
+			// PMM - daedalus sounds
+			if (self->mass >= 225)
+				gi.sound (self, CHAN_VOICE, daed_sound_pain1, 1, ATTN_NORM, 0);
+			else
+#endif //ROGUE
+				gi.sound (self, CHAN_VOICE, sound_pain1, 1, ATTN_NORM, 0);
 			self->monsterinfo.currentmove = &hover_move_pain3;
 		}
 		else
 		{
-			gi.sound (self, CHAN_VOICE, sound_pain2, 1, ATTN_NORM, 0);
+#ifdef ROGUE
+			// PMM - daedalus sounds
+			if (self->mass >= 225)
+				gi.sound (self, CHAN_VOICE, daed_sound_pain2, 1, ATTN_NORM, 0);
+			else
+#endif //ROGUE
+				gi.sound (self, CHAN_VOICE, sound_pain2, 1, ATTN_NORM, 0);
 			self->monsterinfo.currentmove = &hover_move_pain2;
 		}
 	}
 	else
 	{
+#ifdef ROGUE
+//PGM pain sequence is WAY too long
+		if (random() < (0.45 - (0.1 * skill->value)))
+		{
+			// PMM - daedalus sounds
+			if (self->mass < 225)
+				gi.sound (self, CHAN_VOICE, sound_pain1, 1, ATTN_NORM, 0);
+			else
+				gi.sound (self, CHAN_VOICE, daed_sound_pain1, 1, ATTN_NORM, 0);
+			self->monsterinfo.currentmove = &hover_move_pain1;
+		}
+		else
+		{
+			// PMM - daedalus sounds
+			if (self->mass < 225)
+				gi.sound (self, CHAN_VOICE, sound_pain2, 1, ATTN_NORM, 0);
+			else
+				gi.sound (self, CHAN_VOICE, daed_sound_pain2, 1, ATTN_NORM, 0);
+			self->monsterinfo.currentmove = &hover_move_pain2;
+		}
+#else //ROGUE
 		gi.sound (self, CHAN_VOICE, sound_pain1, 1, ATTN_NORM, 0);
 		self->monsterinfo.currentmove = &hover_move_pain1;
+#endif //ROGUE
 	}
 }
 
@@ -540,6 +679,16 @@ void hover_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage
 		return;
 
 // regular death
+#ifdef ROGUE
+	if (self->mass >= 225)
+	{
+		if (random() < 0.5)
+			gi.sound (self, CHAN_VOICE, daed_sound_death1, 1, ATTN_NORM, 0);
+		else
+			gi.sound (self, CHAN_VOICE, daed_sound_death2, 1, ATTN_NORM, 0);
+	}
+	else
+#endif //ROGUE
 	if (random() < 0.5)
 		gi.sound (self, CHAN_VOICE, sound_death1, 1, ATTN_NORM, 0);
 	else
@@ -548,6 +697,16 @@ void hover_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage
 	self->takedamage = DAMAGE_YES;
 	self->monsterinfo.currentmove = &hover_move_death1;
 }
+
+#ifdef ROGUE
+qboolean hover_blocked (edict_t *self, float dist)
+{
+	if(blocked_checkshot (self, 0.25 + (0.05 * skill->value) ))
+		return true;
+
+	return false;
+}
+#endif //ROGUE
 
 /*QUAKED monster_hover (1 .5 0) (-16 -16 -24) (16 16 32) Ambush Trigger_Spawn Sight
 */
@@ -559,17 +718,42 @@ void SP_monster_hover (edict_t *self)
 		return;
 	}
 
-	sound_pain1 = gi.soundindex ("hover/hovpain1.wav");	
-	sound_pain2 = gi.soundindex ("hover/hovpain2.wav");	
-	sound_death1 = gi.soundindex ("hover/hovdeth1.wav");	
-	sound_death2 = gi.soundindex ("hover/hovdeth2.wav");	
-	sound_sight = gi.soundindex ("hover/hovsght1.wav");	
-	sound_search1 = gi.soundindex ("hover/hovsrch1.wav");	
-	sound_search2 = gi.soundindex ("hover/hovsrch2.wav");	
+#ifdef ROGUE
+	if (strcmp(self->classname, "monster_daedalus") == 0)
+	{
+		self->health = 450;
+		self->mass = 225;
+		self->yaw_speed = 25;
+		self->monsterinfo.power_armor_type = POWER_ARMOR_SCREEN;
+		self->monsterinfo.power_armor_power = 100;
+		// PMM - daedalus sounds
+		self->s.sound = gi.soundindex ("daedalus/daedidle1.wav");
+		daed_sound_pain1 = gi.soundindex ("daedalus/daedpain1.wav");	
+		daed_sound_pain2 = gi.soundindex ("daedalus/daedpain2.wav");	
+		daed_sound_death1 = gi.soundindex ("daedalus/daeddeth1.wav");	
+		daed_sound_death2 = gi.soundindex ("daedalus/daeddeth2.wav");	
+		daed_sound_sight = gi.soundindex ("daedalus/daedsght1.wav");	
+		daed_sound_search1 = gi.soundindex ("daedalus/daedsrch1.wav");	
+		daed_sound_search2 = gi.soundindex ("daedalus/daedsrch2.wav");	
+		gi.soundindex ("tank/tnkatck3.wav");	
+		// pmm 
+	}
+	else
+#else
+	{
+		sound_pain1 = gi.soundindex ("hover/hovpain1.wav");	
+		sound_pain2 = gi.soundindex ("hover/hovpain2.wav");	
+		sound_death1 = gi.soundindex ("hover/hovdeth1.wav");	
+		sound_death2 = gi.soundindex ("hover/hovdeth2.wav");	
+		sound_sight = gi.soundindex ("hover/hovsght1.wav");	
+		sound_search1 = gi.soundindex ("hover/hovsrch1.wav");	
+		sound_search2 = gi.soundindex ("hover/hovsrch2.wav");	
 
-	gi.soundindex ("hover/hovatck1.wav");	
+		gi.soundindex ("hover/hovatck1.wav");	
 
-	self->s.sound = gi.soundindex ("hover/hovidle1.wav");
+		self->s.sound = gi.soundindex ("hover/hovidle1.wav");
+	}
+#endif //ROGUE
 
 	self->movetype = MOVETYPE_STEP;
 	self->solid = SOLID_BBOX;
@@ -591,7 +775,11 @@ void SP_monster_hover (edict_t *self)
 	self->monsterinfo.attack = hover_start_attack;
 	self->monsterinfo.sight = hover_sight;
 	self->monsterinfo.search = hover_search;
-
+#ifdef ROGUE
+	self->monsterinfo.blocked = hover_blocked;		// PGM
+	if (strcmp(self->classname, "monster_daedalus") == 0)
+		self->s.skinnum = 2;
+#endif ROGUE
 	gi.linkentity (self);
 
 	self->monsterinfo.currentmove = &hover_move_stand;	

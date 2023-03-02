@@ -2,6 +2,22 @@
 
 #include "g_local.h"
 
+#ifdef ROGUE
+void M_SetEffects (edict_t *self);
+
+/*
+ROGUE
+clean up heal targets for medic
+*/
+void cleanupHealTarget (edict_t *ent)
+{
+	ent->monsterinfo.healer = NULL;
+	ent->takedamage = DAMAGE_YES;
+	ent->monsterinfo.aiflags &= ~AI_RESURRECTING;
+	M_SetEffects (ent);
+}
+#endif //ROGUE
+
 /*
 ============
 CanDamage
@@ -75,19 +91,83 @@ void Killed (edict_t *targ, edict_t *inflictor, edict_t *attacker, int damage, v
 	if (targ->health < -999)
 		targ->health = -999;
 
-	targ->enemy = attacker;
+#ifdef ROGUE
+	if (targ->monsterinfo.aiflags & AI_MEDIC)
+	{
+		if (targ->enemy)  // god, I hope so
+		{
+			cleanupHealTarget (targ->enemy);
+		}
+
+		// clean up self
+		targ->monsterinfo.aiflags &= ~AI_MEDIC;
+		targ->enemy = attacker;
+	}
+	else
+#endif //ROGUE
+		targ->enemy = attacker;
 
 	if ((targ->svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
 	{
 //		targ->svflags |= SVF_DEADMONSTER;	// now treat as a different content type
-		if (!(targ->monsterinfo.aiflags & AI_GOOD_GUY))
+#ifdef ROGUE
+		//ROGUE - free up slot for spawned monster if it's spawned
+		if (targ->monsterinfo.aiflags & AI_SPAWNED_CARRIER)
+		{
+			if (targ->monsterinfo.commander && targ->monsterinfo.commander->inuse && 
+				!strcmp(targ->monsterinfo.commander->classname, "monster_carrier"))
+			{
+				targ->monsterinfo.commander->monsterinfo.monster_slots++;
+//				if ((g_showlogic) && (g_showlogic->value))
+//					gi.dprintf ("g_combat: freeing up carrier slot - %d left\n", targ->monsterinfo.commander->monsterinfo.monster_slots);
+			}
+		}
+		if (targ->monsterinfo.aiflags & AI_SPAWNED_MEDIC_C)
+		{
+			if (targ->monsterinfo.commander)
+			{
+				if (targ->monsterinfo.commander->inuse && !strcmp(targ->monsterinfo.commander->classname, "monster_medic_commander"))
+				{
+					targ->monsterinfo.commander->monsterinfo.monster_slots++;
+//					if ((g_showlogic) && (g_showlogic->value))
+//						gi.dprintf ("g_combat: freeing up medic slot - %d left\n", targ->monsterinfo.commander->monsterinfo.monster_slots);
+				}
+//				else
+//					if ((g_showlogic) && (g_showlogic->value))
+//						gi.dprintf ("my commander is dead!  he's a %s\n", targ->monsterinfo.commander->classname);
+			}
+//			else if ((g_showlogic) && (g_showlogic->value))
+//				gi.dprintf ("My commander is GONE\n");
+
+		}
+		if (targ->monsterinfo.aiflags & AI_SPAWNED_WIDOW)
+		{
+			// need to check this because we can have variable numbers of coop players
+			if (targ->monsterinfo.commander && targ->monsterinfo.commander->inuse && 
+				!strncmp(targ->monsterinfo.commander->classname, "monster_widow", 13))
+			{
+				if (targ->monsterinfo.commander->monsterinfo.monster_used > 0)
+					targ->monsterinfo.commander->monsterinfo.monster_used--;
+//				if ((g_showlogic) && (g_showlogic->value))
+//					gi.dprintf ("g_combat: freeing up black widow slot - %d used\n", targ->monsterinfo.commander->monsterinfo.monster_used);
+			}
+		}
+		//rogue
+#endif //ROGUE
+		if (!(targ->monsterinfo.aiflags & AI_GOOD_GUY)
+#ifdef ROGUE
+				&& (!(targ->monsterinfo.aiflags & AI_DO_NOT_COUNT))
+#endif //ROGUE
+				)
 		{
 			level.killed_monsters++;
 			if (coop->value && attacker->client)
 				attacker->client->resp.score++;
 			// medics won't heal monsters that they kill themselves
+#ifndef ROGUE
 			if (strcmp(attacker->classname, "monster_medic") == 0)
 				targ->owner = attacker;
+#endif //ROGUE
 		}
 	}
 
@@ -165,7 +245,11 @@ static int CheckPowerArmor (edict_t *ent, vec3_t point, vec3_t normal, int damag
 
 	client = ent->client;
 
-	if (dflags & DAMAGE_NO_ARMOR)
+	if (dflags & (DAMAGE_NO_ARMOR
+#ifdef ROGUE
+				| DAMAGE_NO_POWER_ARMOR)
+#endif //ROGUE
+				)
 		return 0;
 
 	if (client)
@@ -248,7 +332,12 @@ static int CheckArmor (edict_t *ent, vec3_t point, vec3_t normal, int damage, in
 	if (!client)
 		return 0;
 
-	if (dflags & DAMAGE_NO_ARMOR)
+	if (dflags & (DAMAGE_NO_ARMOR
+#ifdef ROGUE
+			// ROGUE - added DAMAGE_NO_REG_ARMOR for atf rifle
+			| DAMAGE_NO_REG_ARMOR)
+#endif //ROGUE
+		)
 		return 0;
 
 	index = ArmorIndex (ent);
@@ -273,10 +362,51 @@ static int CheckArmor (edict_t *ent, vec3_t point, vec3_t normal, int damage, in
 	return save;
 }
 
-void M_ReactToDamage (edict_t *targ, edict_t *attacker)
+void M_ReactToDamage (edict_t *targ, edict_t *attacker
+#ifdef ROGUE
+				, edict_t *inflictor
+#endif //ROGUE
+					)
 {
+#ifdef ROGUE
+	// pmm
+	qboolean new_tesla;
+#endif //ROGUE
+
 	if (!(attacker->client) && !(attacker->svflags & SVF_MONSTER))
 		return;
+
+#ifdef ROGUE
+//=======
+//ROGUE
+	// logic for tesla - if you are hit by a tesla, and can't see who you should be mad at (attacker)
+	// attack the tesla
+	// also, target the tesla if it's a "new" tesla
+	if ((inflictor) && (!strcmp(inflictor->classname, "tesla")))
+	{
+		new_tesla = MarkTeslaArea(targ, inflictor);
+		if (new_tesla)
+			TargetTesla (targ, inflictor);
+		return;
+		// FIXME - just ignore teslas when you're TARGET_ANGER or MEDIC
+/*		if (!(targ->enemy && (targ->monsterinfo.aiflags & (AI_TARGET_ANGER|AI_MEDIC))))
+		{
+			// FIXME - coop issues?
+			if ((!targ->enemy) || (!visible(targ, targ->enemy)))
+			{
+				gi.dprintf ("can't see player, switching to tesla\n");
+				TargetTesla (targ, inflictor);
+				return;
+			}
+			gi.dprintf ("can see player, ignoring tesla\n");
+		}
+		else if ((g_showlogic) && (g_showlogic->value))
+			gi.dprintf ("no enemy, or I'm doing other, more important things, than worrying about a damned tesla!\n");
+*/
+	}
+//ROGUE
+//=======
+#endif //ROGUE
 
 	if (attacker == targ || attacker == targ->enemy)
 		return;
@@ -288,6 +418,45 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 		if (attacker->client || (attacker->monsterinfo.aiflags & AI_GOOD_GUY))
 			return;
 	}
+
+#ifdef ROGUE
+//PGM
+	// if we're currently mad at something a target_anger made us mad at, ignore
+	// damage
+	if (targ->enemy && targ->monsterinfo.aiflags & AI_TARGET_ANGER)
+	{
+		float	percentHealth;
+
+		// make sure whatever we were pissed at is still around.
+		if(targ->enemy->inuse)
+		{
+			percentHealth = (float)(targ->health) / (float)(targ->max_health);
+			if( targ->enemy->inuse && percentHealth > 0.33)
+				return;
+		}
+
+		// remove the target anger flag
+		targ->monsterinfo.aiflags &= ~AI_TARGET_ANGER;
+	}
+//PGM
+
+// PMM
+// if we're healing someone, do like above and try to stay with them
+	if ((targ->enemy) && (targ->monsterinfo.aiflags & AI_MEDIC))
+	{
+		float	percentHealth;
+
+		percentHealth = (float)(targ->health) / (float)(targ->max_health);
+		// ignore it some of the time
+		if( targ->enemy->inuse && percentHealth > 0.25)
+			return;
+
+		// remove the medic flag
+		targ->monsterinfo.aiflags &= ~AI_MEDIC;
+		cleanupHealTarget (targ->enemy);
+	}
+// PMM
+#endif //ROGUE
 
 	// we now know that we are not both good guys
 
@@ -315,12 +484,19 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 
 	// it's the same base (walk/swim/fly) type and a different classname and it's not a tank
 	// (they spray too much), get mad at them
+#ifdef ROGUE
+	if (((targ->flags & (FL_FLY|FL_SWIM)) == (attacker->flags & (FL_FLY|FL_SWIM))) &&
+		(strcmp (targ->classname, attacker->classname) != 0) &&
+		!(attacker->monsterinfo.aiflags & AI_IGNORE_SHOTS) &&
+		!(targ->monsterinfo.aiflags & AI_IGNORE_SHOTS) )
+#else //ROGUE
 	if (((targ->flags & (FL_FLY|FL_SWIM)) == (attacker->flags & (FL_FLY|FL_SWIM))) &&
 		 (strcmp (targ->classname, attacker->classname) != 0) &&
 		 (strcmp(attacker->classname, "monster_tank") != 0) &&
 		 (strcmp(attacker->classname, "monster_supertank") != 0) &&
 		 (strcmp(attacker->classname, "monster_makron") != 0) &&
 		 (strcmp(attacker->classname, "monster_jorg") != 0) )
+#endif //ROGUE
 	{
 		if (targ->enemy && targ->enemy->client)
 			targ->oldenemy = targ->enemy;
@@ -350,6 +526,13 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 
 qboolean CheckTeamDamage (edict_t *targ, edict_t *attacker)
 {
+#ifdef ZOID
+	if (ctf->value && targ->client && attacker->client)
+		if (targ->client->resp.ctf_team == attacker->client->resp.ctf_team &&
+			targ != attacker)
+			return true;
+#endif //ZOID
+
 		//FIXME make the next line real and uncomment this block
 		// if ((ability to damage a teammate == OFF) && (targ's team == attacker's team))
 	return false;
@@ -363,9 +546,26 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	int			asave;
 	int			psave;
 	int			te_sparks;
+#ifdef ROGUE
+	int			sphere_notified;	// PGM
+#endif //ROGUE
 
 	if (!targ->takedamage)
 		return;
+
+#ifdef ROGUE
+	sphere_notified = false;		// PGM
+#endif //ROGUE
+
+#ifdef ROCKETARENA
+	if (ra->value)
+	{
+		if (!selfdamage->value && targ == attacker)
+		{
+			damage = 0;
+		} //endif
+	} //end if
+#endif //ROCKETARENA
 
 	// friendly fire avoidance
 	// if enabled you can't hurt teammates (but you can hurt yourself)
@@ -382,15 +582,36 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	}
 	meansOfDeath = mod;
 
+#ifdef ROGUE
+//ROGUE
+	// allow the deathmatch game to change values
+	if (deathmatch->value && gamerules && gamerules->value)
+	{
+		if(DMGame.ChangeDamage)
+			damage = DMGame.ChangeDamage(targ, attacker, damage, mod);
+		if(DMGame.ChangeKnockback)
+			knockback = DMGame.ChangeKnockback(targ, attacker, knockback, mod);
+
+		if(!damage)
+			return;
+	}
+//ROGUE
+#endif //ROGUE
+
+	client = targ->client;
+
+#ifdef ROGUE
+	// PMM - defender sphere takes half damage
+	if ((client) && (client->owned_sphere) && (client->owned_sphere->spawnflags == 1))
+#else //ROGUE
 	// easy mode takes half damage
 	if (skill->value == 0 && deathmatch->value == 0 && targ->client)
+#endif //ROGUE
 	{
 		damage *= 0.5;
 		if (!damage)
 			damage = 1;
 	}
-
-	client = targ->client;
 
 	if (dflags & DAMAGE_BULLET)
 		te_sparks = TE_BULLET_SPARKS;
@@ -402,6 +623,14 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 // bonus damage for suprising a monster
 	if (!(dflags & DAMAGE_RADIUS) && (targ->svflags & SVF_MONSTER) && (attacker->client) && (!targ->enemy) && (targ->health > 0))
 		damage *= 2;
+
+#ifdef ZOID
+	if (ctf->value)
+	{
+		//strength tech
+		damage = CTFApplyStrength(attacker, damage);
+	} //end if
+#endif //ZOID
 
 	if (targ->flags & FL_NO_KNOCKBACK)
 		knockback = 0;
@@ -451,30 +680,132 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 		save = damage;
 	}
 
-	psave = CheckPowerArmor (targ, point, normal, take, dflags);
-	take -= psave;
+#ifdef ROGUE
+	// ROGUE
+	// check for monster invincibility	
+	if (((targ->svflags & SVF_MONSTER) && targ->monsterinfo.invincible_framenum > level.framenum ) && !(dflags & DAMAGE_NO_PROTECTION))
+	{
+		if (targ->pain_debounce_time < level.time)
+		{
+			gi.sound(targ, CHAN_ITEM, gi.soundindex("items/protect4.wav"), 1, ATTN_NORM, 0);
+			targ->pain_debounce_time = level.time + 2;
+		}
+		take = 0;
+		save = damage;
+	}
+	// ROGUE
+#endif //ROGUE
 
-	asave = CheckArmor (targ, point, normal, take, te_sparks, dflags);
-	take -= asave;
+#ifdef ZOID
+	//team armor protect
+	if (ctf->value && targ->client && attacker->client &&
+		targ->client->resp.ctf_team == attacker->client->resp.ctf_team &&
+		targ != attacker && ((int)dmflags->value & DF_ARMOR_PROTECT))
+	{
+		psave = asave = 0;
+	} //end if
+	else
+#endif //ZOID
+#ifdef ROCKETARENA
+	//Rocket Arena armor protect
+	if (ra->value && targ->client && attacker->client &&
+		armorprotect->value && targ != attacker && OnSameTeam(targ, attacker))
+	{
+		psave = asave = 0;
+	} //end if
+	else
+#endif //ROCKETARENA
+	{
+		psave = CheckPowerArmor (targ, point, normal, take, dflags);
+		take -= psave;
+
+		asave = CheckArmor (targ, point, normal, take, te_sparks, dflags);
+		take -= asave;
+	}
 
 	//treat cheat/powerup savings the same as armor
 	asave += save;
+
+#ifdef ZOID
+	if (ctf->value)
+	{
+		//resistance tech
+		take = CTFApplyResistance(targ, take);
+	} //end if
+#endif //ZOID
 
 	// team damage avoidance
 	if (!(dflags & DAMAGE_NO_PROTECTION) && CheckTeamDamage (targ, attacker))
 		return;
 
+#ifdef ROGUE
+// ROGUE - this option will do damage both to the armor and person. originally for DPU rounds
+	if (dflags & DAMAGE_DESTROY_ARMOR)
+	{
+		if(!(targ->flags & FL_GODMODE) && !(dflags & DAMAGE_NO_PROTECTION) &&
+		   !(client && client->invincible_framenum > level.framenum))
+		{
+			take = damage;
+		}
+	}
+// ROGUE
+#endif //ROGUE
+
+#ifdef ZOID
+	if (ctf->value)
+	{
+		CTFCheckHurtCarrier(targ, attacker);
+	} //end if
+#endif //ZOID
+
+#ifdef ROCKETARENA
+	//Rocket Arena health protect
+	if (ra->value && targ->client && attacker->client &&
+		healthprotect->value && targ != attacker && OnSameTeam(targ, attacker))
+	{
+		take = 0;
+	} //end if
+#endif //ROCKETARENA
+
 // do the damage
 	if (take)
 	{
+#ifdef ROGUE
+//PGM		need more blood for chainfist.
+		if(targ->flags & FL_MECHANICAL)
+		{
+			SpawnDamage ( TE_ELECTRIC_SPARKS, point, normal, take);
+		}
+		else if ((targ->svflags & SVF_MONSTER) || (client))
+		{
+			if(mod == MOD_CHAINFIST)
+				SpawnDamage (TE_MOREBLOOD, point, normal, 255);
+			else
+				SpawnDamage (TE_BLOOD, point, normal, take);
+		}
+		else
+			SpawnDamage (te_sparks, point, normal, take);
+//PGM
+#else //ROGUE
 		if ((targ->svflags & SVF_MONSTER) || (client))
 			SpawnDamage (TE_BLOOD, point, normal, take);
 		else
 			SpawnDamage (te_sparks, point, normal, take);
-
+#endif //ROGUE
 
 		targ->health = targ->health - take;
-			
+
+#ifdef ROGUE
+//PGM - spheres need to know who to shoot at
+		if(client && client->owned_sphere)
+		{
+			sphere_notified = true;
+			if(client->owned_sphere->pain)
+				client->owned_sphere->pain (client->owned_sphere, attacker, 0, 0);
+		}
+//PGM
+#endif //ROGUE
+
 		if (targ->health <= 0)
 		{
 			if ((targ->svflags & SVF_MONSTER) || (client))
@@ -484,9 +815,27 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 		}
 	}
 
+#ifdef ROGUE
+//PGM - spheres need to know who to shoot at
+	if (!sphere_notified)
+	{
+		if(client && client->owned_sphere)
+		{
+			sphere_notified = true;
+			if(client->owned_sphere->pain)
+				client->owned_sphere->pain (client->owned_sphere, attacker, 0, 0);
+		}
+	}
+//PGM
+#endif //ROGUE
+
 	if (targ->svflags & SVF_MONSTER)
 	{
-		M_ReactToDamage (targ, attacker);
+		M_ReactToDamage (targ, attacker
+#ifdef ROGUE
+			,inflictor
+#endif //ROGUE
+			);
 		if (!(targ->monsterinfo.aiflags & AI_DUCKED) && (take))
 		{
 			targ->pain (targ, attacker, knockback, take);
@@ -555,3 +904,148 @@ void T_RadiusDamage (edict_t *inflictor, edict_t *attacker, float damage, edict_
 		}
 	}
 }
+
+#ifdef ROGUE
+// **********************
+// ROGUE
+
+/*
+============
+T_RadiusNukeDamage
+
+Like T_RadiusDamage, but ignores walls (skips CanDamage check, among others)
+// up to KILLZONE radius, do 10,000 points
+// after that, do damage linearly out to KILLZONE2 radius
+============
+*/
+
+void T_RadiusNukeDamage (edict_t *inflictor, edict_t *attacker, float damage, edict_t *ignore, float radius, int mod)
+{
+	float	points;
+	edict_t	*ent = NULL;
+	vec3_t	v;
+	vec3_t	dir;
+	float	len;
+	float	killzone, killzone2;
+	trace_t	tr;
+	float	dist;
+
+	killzone = radius;
+	killzone2 = radius*2.0;
+
+	while ((ent = findradius(ent, inflictor->s.origin, killzone2)) != NULL)
+	{
+// ignore nobody
+		if (ent == ignore)
+			continue;
+		if (!ent->takedamage)
+			continue;
+		if (!ent->inuse)
+			continue;
+		if (!(ent->client || (ent->svflags & SVF_MONSTER) || (ent->svflags & SVF_DAMAGEABLE)))
+			continue;
+
+		VectorAdd (ent->mins, ent->maxs, v);
+		VectorMA (ent->s.origin, 0.5, v, v);
+		VectorSubtract (inflictor->s.origin, v, v);
+		len = VectorLength(v);
+		if (len <= killzone)
+		{
+			if (ent->client)
+				ent->flags |= FL_NOGIB;
+			points = 10000;
+		}
+		else if (len <= killzone2)
+			points = (damage/killzone)*(killzone2 - len);
+		else
+			points = 0;
+//		points = damage - 0.005 * len*len;
+//		if (ent == attacker)
+//			points = points * 0.5;
+//		if ((g_showlogic) && (g_showlogic->value))
+//		{
+//			if (!(strcmp(ent->classname, "player")))
+//				gi.dprintf ("dist = %2.2f doing %6.0f damage to %s\n", len, points, inflictor->teammaster->client->pers.netname);
+//			else
+//				gi.dprintf ("dist = %2.2f doing %6.0f damage to %s\n", len, points, ent->classname);
+//		}
+		if (points > 0)
+		{
+//			if (CanDamage (ent, inflictor))
+//			{
+				if (ent->client)
+					ent->client->nuke_framenum = level.framenum + 20;
+				VectorSubtract (ent->s.origin, inflictor->s.origin, dir);
+				T_Damage (ent, inflictor, attacker, dir, inflictor->s.origin, vec3_origin, (int)points, (int)points, DAMAGE_RADIUS, mod);
+//			}
+		}
+	}
+	ent = g_edicts+1; // skip the worldspawn
+	// cycle through players
+	while (ent)
+	{
+		if ((ent->client) && (ent->client->nuke_framenum != level.framenum+20) && (ent->inuse))
+		{
+			tr = gi.trace (inflictor->s.origin, NULL, NULL, ent->s.origin, inflictor, MASK_SOLID);
+			if (tr.fraction == 1.0)
+			{
+//				if ((g_showlogic) && (g_showlogic->value))
+//					gi.dprintf ("Undamaged player in LOS with nuke, flashing!\n");
+				ent->client->nuke_framenum = level.framenum + 20;
+			}
+			else
+			{
+				dist = realrange (ent, inflictor);
+				if (dist < 2048)
+					ent->client->nuke_framenum = max(ent->client->nuke_framenum,level.framenum + 15);
+				else
+					ent->client->nuke_framenum = max(ent->client->nuke_framenum,level.framenum + 10);
+			}
+			ent++;
+		}
+		else
+			ent = NULL;
+	}
+}
+
+/*
+============
+T_RadiusClassDamage
+
+Like T_RadiusDamage, but ignores anything with classname=ignoreClass
+============
+*/
+void T_RadiusClassDamage (edict_t *inflictor, edict_t *attacker, float damage, char *ignoreClass, float radius, int mod)
+{
+	float	points;
+	edict_t	*ent = NULL;
+	vec3_t	v;
+	vec3_t	dir;
+
+	while ((ent = findradius(ent, inflictor->s.origin, radius)) != NULL)
+	{
+		if (ent->classname && !strcmp(ent->classname, ignoreClass))
+			continue;
+		if (!ent->takedamage)
+			continue;
+
+		VectorAdd (ent->mins, ent->maxs, v);
+		VectorMA (ent->s.origin, 0.5, v, v);
+		VectorSubtract (inflictor->s.origin, v, v);
+		points = damage - 0.5 * VectorLength (v);
+		if (ent == attacker)
+			points = points * 0.5;
+		if (points > 0)
+		{
+			if (CanDamage (ent, inflictor))
+			{
+				VectorSubtract (ent->s.origin, inflictor->s.origin, dir);
+				T_Damage (ent, inflictor, attacker, dir, inflictor->s.origin, vec3_origin, (int)points, (int)points, DAMAGE_RADIUS, mod);
+			}
+		}
+	}
+}
+
+// ROGUE
+// ********************
+#endif //ROGUE

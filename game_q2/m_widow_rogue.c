@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 /*
 ==============================================================================
 
@@ -11,7 +15,10 @@ black widow
 // self->monsterinfo.pausetime used for timing of blaster shots
 
 #include "g_local.h"
-#include "m_widow.h"
+
+#ifdef ROGUE
+
+#include "m_widow_rogue.h"
 
 #define	NUM_STALKERS_SPAWNED		6		// max # of stalkers she can spawn
 
@@ -197,6 +204,8 @@ int WidowTorso (edict_t *self)
 	else if (enemy_yaw <= -33.75)
 		return FRAME_fired07;
 */
+	//ROGUEBUG: missing return value
+	return FRAME_fired20;
 }
 
 #define	VARIANCE 15.0
@@ -1712,3 +1721,5 @@ void SP_monster_widow (edict_t *self)
 
 	walkmonster_start (self);
 }
+
+#endif //ROGUE

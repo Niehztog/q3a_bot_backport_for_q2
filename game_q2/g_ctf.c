@@ -1,5 +1,7 @@
 #include "g_local.h"
 
+#ifdef ZOID //#endif at the end of the file
+
 typedef struct ctfgame_s
 {
 	int team1, team2;
@@ -136,9 +138,9 @@ static char *tnames[] = {
 
 void stuffcmd(edict_t *ent, char *s) 	
 {
-   	gi.WriteByte (11);	        
+   gi.WriteByte (11);	        
 	gi.WriteString (s);
-    gi.unicast (ent, true);	
+	gi.unicast (ent, true);	
 }
 
 /*--------------------------------------------------------------------------*/
@@ -229,9 +231,31 @@ static qboolean loc_CanSee (edict_t *targ, edict_t *inflictor)
 static gitem_t *flag1_item;
 static gitem_t *flag2_item;
 
+#ifdef BOT
+//we have to precache the darn items!!!
+void PrecacheCTFItems(void)
+{
+	gitem_t *it;
+	it = FindItemByClassname("weapon_grapple");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_flag_team1");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_flag_team2");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_tech1");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_tech2");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_tech3");
+	PrecacheItem(it);
+	it = FindItemByClassname("item_tech4");
+	PrecacheItem(it);
+} //end of the function PrecacheCTFItems
+#endif //BOT
+
 void CTFInit(void)
 {
-	ctf = gi.cvar("ctf", "1", CVAR_SERVERINFO);
+	ctf = gi.cvar("ctf", "0", CVAR_SERVERINFO);
 	ctf_forcejoin = gi.cvar("ctf_forcejoin", "", 0);
 
 	if (!flag1_item)
@@ -292,62 +316,78 @@ void CTFAssignSkin(edict_t *ent, char *s)
 	Com_sprintf(t, sizeof(t), "%s", s);
 
 	if ((p = strrchr(t, '/')) != NULL)
+	{
 		p[1] = 0;
+#ifdef BOT
+		if (strlen(t) <= 1) strcpy(t, "male/");
+#endif //BOT
+	} //end if
 	else
 		strcpy(t, "male/");
 
-	switch (ent->client->resp.ctf_team) {
+
+	switch (ent->client->resp.ctf_team)
+	{
 	case CTF_TEAM1:
 		gi.configstring (CS_PLAYERSKINS+playernum, va("%s\\%s%s", 
 			ent->client->pers.netname, t, CTF_TEAM1_SKIN) );
+#ifdef BOT
+		Info_SetValueForKey(ent->client->pers.userinfo, "skin", va("%s%s", t, CTF_TEAM1_SKIN));
+#endif //BOT
 		break;
 	case CTF_TEAM2:
 		gi.configstring (CS_PLAYERSKINS+playernum,
 			va("%s\\%s%s", ent->client->pers.netname, t, CTF_TEAM2_SKIN) );
+#ifdef BOT
+		Info_SetValueForKey(ent->client->pers.userinfo, "skin", va("%s%s", t, CTF_TEAM2_SKIN));
+#endif //BOT
 		break;
 	default:
 		gi.configstring (CS_PLAYERSKINS+playernum, 
 			va("%s\\%s", ent->client->pers.netname, s) );
+#ifdef BOT
+		Info_SetValueForKey(ent->client->pers.userinfo, "skin", va("%s", s));
+#endif //BOT
 		break;
 	}
+//	gi.dprintf("%s's skin set to %s\n", ent->client->pers.netname, Info_ValueForKey(ent->client->pers.userinfo, "skin"));
 //	gi.cprintf(ent, PRINT_HIGH, "You have been assigned to %s team.\n", ent->client->pers.netname);
 }
 
-void CTFAssignTeam(gclient_t *who)
+void CTFForceAssignTeam(gclient_t *who)
 {
-	edict_t		*player;
+	edict_t *player;
 	int i;
 	int team1count = 0, team2count = 0;
 
+	for (i = 1; i <= maxclients->value; i++)
+	{
+		player = &g_edicts[i];
+
+		if (!player->inuse || player->client == who)
+			continue;
+
+		switch (player->client->resp.ctf_team)
+		{
+			case CTF_TEAM1: team1count++; break;
+			case CTF_TEAM2: team2count++; break;
+		}
+	}
+	if (team1count < team2count) who->resp.ctf_team = CTF_TEAM1;
+	else if (team2count < team1count) who->resp.ctf_team = CTF_TEAM2;
+	else if (rand() & 1) who->resp.ctf_team = CTF_TEAM1;
+	else who->resp.ctf_team = CTF_TEAM2;
+} //end of the function CTFForceAssignTeam
+
+void CTFAssignTeam(gclient_t *who)
+{
 	who->resp.ctf_state = CTF_STATE_START;
 
 	if (!((int)dmflags->value & DF_CTF_FORCEJOIN)) {
 		who->resp.ctf_team = CTF_NOTEAM;
 		return;
 	}
-
-	for (i = 1; i <= maxclients->value; i++) {
-		player = &g_edicts[i];
-
-		if (!player->inuse || player->client == who)
-			continue;
-
-		switch (player->client->resp.ctf_team) {
-		case CTF_TEAM1:
-			team1count++;
-			break;
-		case CTF_TEAM2:
-			team2count++;
-		}
-	}
-	if (team1count < team1count)
-		who->resp.ctf_team = CTF_TEAM1;
-	else if (team2count < team1count)
-		who->resp.ctf_team = CTF_TEAM2;
-	else if (rand() & 1)
-		who->resp.ctf_team = CTF_TEAM1;
-	else
-		who->resp.ctf_team = CTF_TEAM2;
+	CTFForceAssignTeam(who);
 }
 
 /*
@@ -1077,7 +1117,8 @@ void CTFPlayerResetGrapple(edict_t *ent)
 // self is grapple, not player
 void CTFResetGrapple(edict_t *self)
 {
-	if (self->owner->client->ctf_grapple) {
+	if (self->owner->client->ctf_grapple)
+	{
 		float volume = 1.0;
 		gclient_t *cl;
 
@@ -1140,6 +1181,8 @@ void CTFGrappleTouch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t
 		gi.WriteDir (plane->normal);
 	gi.multicast (self->s.origin, MULTICAST_PVS);
 }
+
+void P_ProjectSource (gclient_t *client, vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result);
 
 // draw beam between grapple and self
 void CTFGrappleDrawCable(edict_t *self)
@@ -1205,19 +1248,35 @@ void CTFGrappleDrawCable(edict_t *self)
 
 void SV_AddGravity (edict_t *ent);
 
+qboolean CheckTeamDamage (edict_t *targ, edict_t *attacker);
 // pull the player toward the grapple
 void CTFGrapplePull(edict_t *self)
 {
 	vec3_t hookdir, v;
 	float vlen;
 
-	if (strcmp(self->owner->client->pers.weapon->classname, "weapon_grapple") == 0 &&
-		!self->owner->client->newweapon &&
-		self->owner->client->weaponstate != WEAPON_FIRING &&
-		self->owner->client->weaponstate != WEAPON_ACTIVATING) {
-		CTFResetGrapple(self);
-		return;
-	}
+#ifdef CTF_HOOK
+	if (self->owner->client->ctf_hookstate & CTF_HOOK_STATE_ON)
+	{
+		if (self->owner->client->ctf_hookstate & CTF_HOOK_STATE_TURNOFF)
+		{
+			self->owner->client->ctf_hookstate = 0;
+			CTFResetGrapple(self);
+			return;
+		} //end if
+	} //end if
+	else
+#endif //CTF_HOOK
+	{
+		if (strcmp(self->owner->client->pers.weapon->classname, "weapon_grapple") == 0 &&
+			!self->owner->client->newweapon &&
+			self->owner->client->weaponstate != WEAPON_FIRING &&
+			self->owner->client->weaponstate != WEAPON_ACTIVATING)
+		{
+			CTFResetGrapple(self);
+			return;
+		} //end if
+	} //end else
 
 	if (self->enemy) {
 		if (self->enemy->solid == SOLID_NOT) {
@@ -1365,6 +1424,22 @@ void CTFWeapon_Grapple_Fire (edict_t *ent)
 	CTFGrappleFire (ent, vec3_origin, damage, 0);
 	ent->client->ps.gunframe++;
 }
+
+#ifdef CTF_HOOK
+void CTFHook_Fire (edict_t *ent)
+{
+	int		damage;
+
+	if (ent->client->ctf_hookstate & CTF_HOOK_STATE_FIRED) return;
+	damage = 10;
+	CTFGrappleFire (ent, vec3_origin, damage, 0);
+	//
+	ent->client->ctf_hookstate |= CTF_HOOK_STATE_FIRED;
+} //end of the function CTFHook_Fire
+#endif //CTF_HOOK
+
+
+void Weapon_Generic(edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST, int FRAME_IDLE_LAST, int FRAME_DEACTIVATE_LAST, int *pause_frames, int *fire_frames, void (*fire)(edict_t *ent));
 
 void CTFWeapon_Grapple (edict_t *ent)
 {
@@ -2257,13 +2332,13 @@ static void CTFSay_Team_Sight(edict_t *who, char *buf)
 		strcpy(buf, "no one");
 }
 
-void CTFSay_Team(edict_t *who, char *msg)
+void CTFSay_Team(edict_t *who, char *msg, char *output)
 {
+//	int i;
+//	edict_t *cl_ent;
 	char outmsg[1024];
 	char buf[1024];
-	int i;
 	char *p;
-	edict_t *cl_ent;
 
 	outmsg[0] = 0;
 
@@ -2320,7 +2395,8 @@ void CTFSay_Team(edict_t *who, char *msg)
 			*p++ = *msg;
 	}
 	*p = 0;
-
+	strcpy(output, outmsg);
+/*
 	for (i = 0; i < maxclients->value; i++) {
 		cl_ent = g_edicts + 1 + i;
 		if (!cl_ent->inuse)
@@ -2328,7 +2404,7 @@ void CTFSay_Team(edict_t *who, char *msg)
 		if (cl_ent->client->resp.ctf_team == who->client->resp.ctf_team)
 			gi.cprintf(cl_ent, PRINT_CHAT, "(%s): %s\n", 
 				who->client->pers.netname, outmsg);
-	}
+	}*/
 }
 
 /*-----------------------------------------------------------------------*/
@@ -2385,6 +2461,10 @@ void CTFJoinTeam(edict_t *ent, int desired_team)
 
 	PMenu_Close(ent);
 
+#ifdef OBSERVER
+	ent->flags &= ~FL_OBSERVER;
+#endif //OBSERVER
+
 	ent->svflags &= ~SVF_NOCLIENT;
 	ent->client->resp.ctf_team = desired_team;
 	ent->client->resp.ctf_state = CTF_STATE_START;
@@ -2424,7 +2504,8 @@ void CTFChaseCam(edict_t *ent, pmenu_t *p)
 
 	for (i = 1; i <= maxclients->value; i++) {
 		e = g_edicts + i;
-		if (e->inuse && e->solid != SOLID_NOT) {
+		if (e->inuse && e->solid != SOLID_NOT)
+		{
 			ent->client->chase_target = e;
 			PMenu_Close(ent);
 			ent->client->update_chase = true;
@@ -2580,10 +2661,31 @@ void CTFCredits(edict_t *ent, pmenu_t *p)
 
 qboolean CTFStartClient(edict_t *ent)
 {
+	char *s;
+
 	if (ent->client->resp.ctf_team != CTF_NOTEAM)
 		return false;
 
-	if (!((int)dmflags->value & DF_CTF_FORCEJOIN)) {
+#ifdef BOT
+	//bots are always forced to join a team
+	if (ent->flags & FL_BOT)
+	{
+		int ctfteam;
+
+		s = Info_ValueForKey(ent->client->pers.userinfo, "ctfteam");
+		ctfteam = atoi(s);
+		if (ctfteam == 1) ent->client->resp.ctf_team = CTF_TEAM1;
+		else if (ctfteam == 2) ent->client->resp.ctf_team = CTF_TEAM2;
+		else CTFForceAssignTeam(ent->client);
+		ent->client->resp.ctf_state = CTF_STATE_START;
+		s = Info_ValueForKey (ent->client->pers.userinfo, "skin");
+		CTFAssignSkin(ent, s);
+		return false;
+	} //end if
+#endif //BOT
+
+	if (!((int)dmflags->value & DF_CTF_FORCEJOIN))
+	{
 		// start as 'observer'
 		ent->movetype = MOVETYPE_NOCLIP;
 		ent->solid = SOLID_NOT;
@@ -2709,3 +2811,4 @@ void SP_info_teleport_destination (edict_t *ent)
 	ent->s.origin[2] += 16;
 }
 
+#endif //ZOID #ifdef at start of file

@@ -1,8 +1,14 @@
+//===================
+// ROGUE
+//===================
+
 // dm_tag
 // pmack
 // june 1998
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 extern edict_t *SelectFarthestDeathmatchSpawnPoint (void);
 extern void	SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles);
@@ -331,3 +337,4 @@ void SP_dm_tag_token (edict_t *self)
 	SpawnItem (self, FindItem ("Tag Token"));
 }
 
+#endif //ROGUE

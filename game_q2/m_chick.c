@@ -9,6 +9,10 @@ chick
 #include "g_local.h"
 #include "m_chick.h"
 
+#ifdef ROGUE
+#define LEAD_TARGET		1
+#endif //ROGUE
+
 qboolean visible (edict_t *self, edict_t *other);
 
 void chick_stand (edict_t *self);
@@ -267,12 +271,23 @@ void chick_pain (edict_t *self, edict_t *other, float kick, int damage)
 	if (skill->value == 3)
 		return;		// no pain anims in nightmare
 
+#ifdef ROGUE
+	// PMM - clear this from blindfire
+	self->monsterinfo.aiflags &= ~AI_MANUAL_STEERING;
+#endif //ROGUE
+
 	if (damage <= 10)
 		self->monsterinfo.currentmove = &chick_move_pain1;
 	else if (damage <= 25)
 		self->monsterinfo.currentmove = &chick_move_pain2;
 	else
 		self->monsterinfo.currentmove = &chick_move_pain3;
+
+#ifdef ROGUE
+	// PMM - clear duck flag
+	if (self->monsterinfo.aiflags & AI_DUCKED)
+		monster_duck_up(self);
+#endif //ROGUE
 }
 
 void chick_dead (edict_t *self)
@@ -408,6 +423,7 @@ mframe_t chick_frames_duck [] =
 };
 mmove_t chick_move_duck = {FRAME_duck01, FRAME_duck07, chick_frames_duck, chick_run};
 
+#ifndef ROGUE
 void chick_dodge (edict_t *self, edict_t *attacker, float eta)
 {
 	if (random() > 0.25)
@@ -418,6 +434,7 @@ void chick_dodge (edict_t *self, edict_t *attacker, float eta)
 
 	self->monsterinfo.currentmove = &chick_move_duck;
 }
+#endif //ROGUE
 
 void ChickSlash (edict_t *self)
 {
@@ -428,7 +445,134 @@ void ChickSlash (edict_t *self)
 	fire_hit (self, aim, (10 + (rand() %6)), 100);
 }
 
+#ifdef ROGUE
+void ChickRocket (edict_t *self)
+{
+	vec3_t	forward, right;
+	vec3_t	start;
+	vec3_t	dir;
+	vec3_t	vec;
+	trace_t	trace;	// PMM - check target
+	int		rocketSpeed;
+	float	dist;
+	// pmm - blindfire
+	vec3_t	target;
+	qboolean blindfire = false;
 
+	if (self->monsterinfo.aiflags & AI_MANUAL_STEERING)
+		blindfire = true;
+	else
+		blindfire = false;
+
+	if(!self->enemy || !self->enemy->inuse)		//PGM
+		return;									//PGM
+
+	AngleVectors (self->s.angles, forward, right, NULL);
+	G_ProjectSource (self->s.origin, monster_flash_offset[MZ2_CHICK_ROCKET_1], forward, right, start);
+
+	rocketSpeed = 500 + (100 * skill->value);	// PGM rock & roll.... :)
+
+	// put a debug trail from start to endpoint, confirm that the start point is
+	// correct for the trace
+
+	// PMM
+	if (blindfire)
+		VectorCopy (self->monsterinfo.blind_fire_target, target);
+	else
+		VectorCopy (self->enemy->s.origin, target);
+	// pmm
+//PGM
+	// PMM - blindfire shooting
+	if (blindfire)
+	{
+		VectorCopy (target, vec);
+		VectorSubtract (vec, start, dir);
+	}
+	// pmm
+	// don't shoot at feet if they're above where i'm shooting from.
+	else if(random() < 0.33 || (start[2] < self->enemy->absmin[2]))
+	{
+//		gi.dprintf("normal shot\n");
+		VectorCopy (target, vec);
+		vec[2] += self->enemy->viewheight;
+		VectorSubtract (vec, start, dir);
+	}
+	else
+	{
+//		gi.dprintf("shooting at feet!\n");
+		VectorCopy (target, vec);
+		vec[2] = self->enemy->absmin[2];
+		VectorSubtract (vec, start, dir);
+	}
+//PGM
+
+//======
+//PMM - lead target  (not when blindfiring)
+	// 20, 35, 50, 65 chance of leading
+	if((!blindfire) && ((random() < (0.2 + ((3 - skill->value) * 0.15)))))
+	{
+		float	time;
+
+//		gi.dprintf ("leading target\n");
+		dist = VectorLength (dir);
+		time = dist/rocketSpeed;
+		VectorMA(vec, time, self->enemy->velocity, vec);
+		VectorSubtract(vec, start, dir);
+	}
+//PMM - lead target
+//======
+
+	VectorNormalize (dir);
+
+	// pmm blindfire doesn't check target (done in checkattack)
+	// paranoia, make sure we're not shooting a target right next to us
+	trace = gi.trace(start, vec3_origin, vec3_origin, vec, self, MASK_SHOT);
+	if (blindfire)
+	{
+		// blindfire has different fail criteria for the trace
+		if (!(trace.startsolid || trace.allsolid || (trace.fraction < 0.5)))
+			monster_fire_rocket (self, start, dir, 50, rocketSpeed, MZ2_CHICK_ROCKET_1);
+		else 
+		{
+			// geez, this is bad.  she's avoiding about 80% of her blindfires due to hitting things.
+			// hunt around for a good shot
+			// try shifting the target to the left a little (to help counter her large offset)
+			VectorCopy (target, vec);
+			VectorMA (vec, -10, right, vec);
+			VectorSubtract(vec, start, dir);
+			VectorNormalize (dir);
+			trace = gi.trace(start, vec3_origin, vec3_origin, vec, self, MASK_SHOT);
+			if (!(trace.startsolid || trace.allsolid || (trace.fraction < 0.5)))
+				monster_fire_rocket (self, start, dir, 50, rocketSpeed, MZ2_CHICK_ROCKET_1);
+			else 
+			{
+				// ok, that failed.  try to the right
+				VectorCopy (target, vec);
+				VectorMA (vec, 10, right, vec);
+				VectorSubtract(vec, start, dir);
+				VectorNormalize (dir);
+				trace = gi.trace(start, vec3_origin, vec3_origin, vec, self, MASK_SHOT);
+				if (!(trace.startsolid || trace.allsolid || (trace.fraction < 0.5)))
+					monster_fire_rocket (self, start, dir, 50, rocketSpeed, MZ2_CHICK_ROCKET_1);
+//				else if ((g_showlogic) && (g_showlogic->value))
+//					// ok, I give up
+//					gi.dprintf ("chick avoiding blindfire shot\n");
+			}
+		}
+	}
+	else
+	{
+		trace = gi.trace(start, vec3_origin, vec3_origin, vec, self, MASK_SHOT);
+		if(trace.ent == self->enemy || trace.ent == world)
+		{
+			if(trace.fraction > 0.5 || (trace.ent && trace.ent->client))
+				monster_fire_rocket (self, start, dir, 50, rocketSpeed, MZ2_CHICK_ROCKET_1);
+	//		else
+	//			gi.dprintf("didn't make it halfway to target...aborting\n");
+		}
+	}
+}	
+#else //ROGUE
 void ChickRocket (edict_t *self)
 {
 	vec3_t	forward, right;
@@ -446,6 +590,7 @@ void ChickRocket (edict_t *self)
 
 	monster_fire_rocket (self, start, dir, 50, 500, MZ2_CHICK_ROCKET_1);
 }	
+#endif //ROGUE
 
 void Chick_PreAttack1 (edict_t *self)
 {
@@ -594,6 +739,48 @@ void chick_melee(edict_t *self)
 
 void chick_attack(edict_t *self)
 {
+#ifdef ROGUE
+	float r, chance;
+
+	monster_done_dodge (self);
+
+	// PMM 
+	if (self->monsterinfo.attack_state == AS_BLIND)
+	{
+		// setup shot probabilities
+		if (self->monsterinfo.blind_fire_delay < 1.0)
+			chance = 1.0;
+		else if (self->monsterinfo.blind_fire_delay < 7.5)
+			chance = 0.4;
+		else
+			chance = 0.1;
+
+		r = random();
+
+		// minimum of 2 seconds, plus 0-3, after the shots are done
+		self->monsterinfo.blind_fire_delay += 4.0 + 1.5 + random();
+
+		// don't shoot at the origin
+		if (VectorCompare (self->monsterinfo.blind_fire_target, vec3_origin))
+			return;
+
+		// don't shoot if the dice say not to
+		if (r > chance)
+		{
+//			if ((g_showlogic) && (g_showlogic->value))
+//				gi.dprintf ("blindfire - NO SHOT\n");
+			return;
+		}
+
+		// turn on manual steering to signal both manual steering and blindfire
+		self->monsterinfo.aiflags |= AI_MANUAL_STEERING;
+		self->monsterinfo.currentmove = &chick_move_start_attack1;
+		self->monsterinfo.attack_finished = level.time + 2*random();
+		return;
+	}
+	// pmm
+#endif //ROGUE
+
 	self->monsterinfo.currentmove = &chick_move_start_attack1;
 }
 
@@ -601,6 +788,64 @@ void chick_sight(edict_t *self, edict_t *other)
 {
 	gi.sound (self, CHAN_VOICE, sound_sight, 1, ATTN_NORM, 0);
 }
+
+#ifdef ROGUE
+qboolean chick_blocked (edict_t *self, float dist)
+{
+	if(blocked_checkshot (self, 0.25 + (0.05 * skill->value) ))
+		return true;
+
+	if(blocked_checkplat (self, dist))
+		return true;
+
+	return false;
+}
+
+void chick_duck (edict_t *self, float eta)
+{
+	if ((self->monsterinfo.currentmove == &chick_move_start_attack1) ||
+		(self->monsterinfo.currentmove == &chick_move_attack1))
+	{
+		// if we're shooting, and not on easy, don't dodge
+		if (skill->value)
+		{
+			self->monsterinfo.aiflags &= ~AI_DUCKED;
+			return;
+		}
+	}
+
+	if (skill->value == 0)
+		// PMM - stupid dodge
+		self->monsterinfo.duck_wait_time = level.time + eta + 1;
+	else
+		self->monsterinfo.duck_wait_time = level.time + eta + (0.1 * (3 - skill->value));
+
+	// has to be done immediately otherwise she can get stuck
+	monster_duck_down(self);
+
+	self->monsterinfo.nextframe = FRAME_duck01;
+	self->monsterinfo.currentmove = &chick_move_duck;
+	return;
+}
+
+void chick_sidestep (edict_t *self)
+{
+	if ((self->monsterinfo.currentmove == &chick_move_start_attack1) ||
+		(self->monsterinfo.currentmove == &chick_move_attack1))
+	{
+		// if we're shooting, and not on easy, don't dodge
+		if (skill->value)
+		{
+			self->monsterinfo.aiflags &= ~AI_DODGING;
+			return;
+		}
+	}
+
+	if (self->monsterinfo.currentmove != &chick_move_run)
+		self->monsterinfo.currentmove = &chick_move_run;
+}
+#endif //ROGUE
+
 
 /*QUAKED monster_chick (1 .5 0) (-16 -16 -24) (16 16 32) Ambush Trigger_Spawn Sight
 */
@@ -644,7 +889,16 @@ void SP_monster_chick (edict_t *self)
 	self->monsterinfo.stand = chick_stand;
 	self->monsterinfo.walk = chick_walk;
 	self->monsterinfo.run = chick_run;
+#ifdef ROGUE
+	self->monsterinfo.dodge = M_MonsterDodge;
+	self->monsterinfo.duck = chick_duck;
+	self->monsterinfo.unduck = monster_duck_up;
+	self->monsterinfo.sidestep = chick_sidestep;
+	self->monsterinfo.blocked = chick_blocked;		// PGM
+	self->monsterinfo.blindfire = true;
+#else //ROGUE
 	self->monsterinfo.dodge = chick_dodge;
+#endif //ROGUE
 	self->monsterinfo.attack = chick_attack;
 	self->monsterinfo.melee = chick_melee;
 	self->monsterinfo.sight = chick_sight;
@@ -656,3 +910,15 @@ void SP_monster_chick (edict_t *self)
 
 	walkmonster_start (self);
 }
+
+#ifdef XATRIX
+
+/*QUAKED monster_chick_heat (1 .5 0) (-16 -16 -24) (16 16 32) Ambush Trigger_Spawn Sight 
+*/
+void SP_monster_chick_heat (edict_t *self)
+{
+	SP_monster_chick (self);
+	self->s.skinnum = 3;
+}
+
+#endif //XATRIX

@@ -1,8 +1,14 @@
+//===================
+// ROGUE
+//===================
+
 // g_newtrig.c
 // pmack
 // october 1997
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 #define TELEPORT_PLAYER_ONLY	1
 #define TELEPORT_SILENT			2
@@ -11,6 +17,7 @@
 
 extern void TeleportEffect (vec3_t origin);
 
+#if !defined(ZOID)
 /*QUAKED info_teleport_destination (.5 .5 .5) (-16 -16 -24) (16 16 32)
 Destination marker for a teleporter.
 */
@@ -124,6 +131,8 @@ void SP_trigger_teleport(edict_t *self)
 	gi.linkentity (self);
 }
 
+#endif !defined(ZOID)
+
 // ***************************
 // TRIGGER_DISGUISE
 // ***************************
@@ -174,3 +183,5 @@ void SP_trigger_disguise (edict_t *self)
 	gi.linkentity(self);
 
 }
+
+#endif //ROGUE

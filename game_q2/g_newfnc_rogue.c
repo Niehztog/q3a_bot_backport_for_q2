@@ -1,4 +1,10 @@
+//===================
+// ROGUE
+//===================
+
 #include "g_local.h"
+
+#ifdef ROGUE
 
 //void plat_CalcMove (edict_t *ent, vec3_t dest, void(*func)(edict_t*));
 void Move_Calc (edict_t *ent, vec3_t dest, void(*func)(edict_t*));
@@ -345,3 +351,5 @@ void SP_func_force_wall(edict_t *ent)
 	
 	gi.linkentity(ent);
 }
+
+#endif //ROGUE

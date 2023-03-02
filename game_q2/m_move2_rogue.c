@@ -1,6 +1,12 @@
+//===================
+// ROGUE
+//===================
+
 // m_move.c -- monster movement
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 #define	STEPSIZE	18
 
@@ -733,3 +739,5 @@ qboolean M_walkmove (edict_t *ent, float yaw, float dist)
 
 	return SV_movestep(ent, move, true);
 }
+
+#endif //ROGUE

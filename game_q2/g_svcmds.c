@@ -1,6 +1,10 @@
 
 #include "g_local.h"
 
+#ifdef BOT
+#include "bl_cmd.h"
+#endif //BOT
+
 
 void	Svcmd_Test_f (void)
 {
@@ -275,6 +279,16 @@ void	ServerCommand (void)
 		SVCmd_ListIP_f ();
 	else if (Q_stricmp (cmd, "writeip") == 0)
 		SVCmd_WriteIP_f ();
+#ifdef BOT
+	else if (BotCmd(cmd, NULL, true))
+	{
+	} //end else if
+#endif //BOT
+#ifdef LOGFILE
+	else if (LogCmd(cmd))
+	{
+	} //end else if
+#endif //LOGFILE
 	else
 		gi.cprintf (NULL, PRINT_HIGH, "Unknown server command \"%s\"\n", cmd);
 }

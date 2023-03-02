@@ -1,6 +1,13 @@
 #include "g_local.h"
 
 
+#define TRIGGER_MONSTER		0x01
+#define TRIGGER_NOT_PLAYER	0x02
+#define TRIGGER_TRIGGERED	0x04
+#ifdef ROGUE //- some of these are mine, some id's. I added the define's.
+#define TRIGGER_TOGGLE		0x08
+#endif //ROGUE
+
 void InitTrigger (edict_t *self)
 {
 	if (!VectorCompare (self->s.angles, vec3_origin))
@@ -46,8 +53,21 @@ void multi_trigger (edict_t *ent)
 
 void Use_Multi (edict_t *ent, edict_t *other, edict_t *activator)
 {
-	ent->activator = activator;
-	multi_trigger (ent);
+#ifdef ROGUE
+	if(ent->spawnflags & TRIGGER_TOGGLE)
+	{
+		if(ent->solid == SOLID_TRIGGER)
+			ent->solid = SOLID_NOT;
+		else
+			ent->solid = SOLID_TRIGGER;
+		gi.linkentity (ent);
+	}
+	else
+#endif //ROGUE
+	{
+		ent->activator = activator;
+		multi_trigger (ent);
+	}
 }
 
 void Touch_Multi (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
@@ -112,7 +132,11 @@ void SP_trigger_multiple (edict_t *ent)
 	ent->svflags |= SVF_NOCLIENT;
 
 
-	if (ent->spawnflags & 4)
+	if (ent->spawnflags & (TRIGGER_TRIGGERED
+#ifdef ROGUE
+				| TRIGGER_TOGGLE)
+#endif //ROGUE
+			)
 	{
 		ent->solid = SOLID_NOT;
 		ent->use = trigger_enable;
@@ -169,6 +193,10 @@ This fixed size trigger cannot be touched, it can only be fired by other events.
 */
 void trigger_relay_use (edict_t *self, edict_t *other, edict_t *activator)
 {
+#ifdef TRIGGER_COUNTING
+	if (self->style) self->count = self->style;
+	else self->count = other->count;
+#endif
 	G_UseTargets (self, activator);
 }
 
@@ -368,7 +396,11 @@ trigger_push
 ==============================================================================
 */
 
-#define PUSH_ONCE		1
+#define PUSH_ONCE			0x01
+#ifdef ROGUE
+#define PUSH_START_OFF	0x02
+#define PUSH_SILENT		0x04
+#endif //ROGUE
 
 static int windsound;
 
@@ -379,7 +411,7 @@ void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, csurfac
 		VectorScale (self->movedir, self->speed * 10, other->velocity);
 	}
 	else if (other->health > 0)
-	{
+	{	
 		VectorScale (self->movedir, self->speed * 10, other->velocity);
 
 		if (other->client)
@@ -394,9 +426,126 @@ void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, csurfac
 		}
 	}
 	if (self->spawnflags & PUSH_ONCE)
-		G_FreeEdict (self);
+	G_FreeEdict (self);
 }
 
+#ifdef ROGUE
+void trigger_push_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	if (self->solid == SOLID_NOT)
+		self->solid = SOLID_TRIGGER;
+	else
+		self->solid = SOLID_NOT;
+	gi.linkentity (self);
+}
+#endif //ROGUE
+
+#ifdef XATRIX
+// RAFAEL
+
+/*QUAKED trigger_push (.5 .5 .5) ? PUSH_ONCE PUSH_PLUS PUSH_RAMP
+Pushes the player
+"speed"  defaults to 1000
+"wait"  defaults to 10 must use PUSH_PLUS  used for on
+*/
+
+void trigger_push_active (edict_t *self);
+
+void trigger_effect (edict_t *self)
+{
+	vec3_t	origin;
+	vec3_t	size;
+	int		i;
+	
+	VectorScale (self->size, 0.5, size);
+	VectorAdd (self->absmin, size, origin);
+	
+	for (i=0; i<10; i++)
+	{
+		origin[2] += (self->speed * 0.01) * (i + random());
+		gi.WriteByte (svc_temp_entity);
+		gi.WriteByte (TE_TUNNEL_SPARKS);
+		gi.WriteByte (1);
+		gi.WritePosition (origin);
+		gi.WriteDir (vec3_origin);
+		gi.WriteByte (0x74 + (rand()&7));
+		gi.multicast (self->s.origin, MULTICAST_PVS);
+	}
+
+}
+
+void trigger_push_inactive (edict_t *self)
+{
+	if (self->delay > level.time)
+	{
+		self->nextthink = level.time + 0.1;
+	}
+	else
+	{
+		self->touch = trigger_push_touch;
+		self->think = trigger_push_active;
+		self->nextthink = level.time + 0.1;
+		self->delay = self->nextthink + self->wait;  
+	}
+}
+
+void trigger_push_active (edict_t *self)
+{
+	if (self->delay > level.time)
+	{
+		self->nextthink = level.time + 0.1;
+		trigger_effect (self);
+	}
+	else
+	{
+		self->touch = NULL;
+		self->think = trigger_push_inactive;
+		self->nextthink = level.time + 0.1;
+		self->delay = self->nextthink + self->wait;  
+	}
+}
+
+void SP_trigger_push (edict_t *self)
+{
+	InitTrigger (self);
+	windsound = gi.soundindex ("misc/windfly.wav");
+	self->touch = trigger_push_touch;
+	
+	if (self->spawnflags & 2)
+	{
+		if (!self->wait)
+			self->wait = 10;
+  
+		self->think = trigger_push_active;
+		self->nextthink = level.time + 0.1;
+		self->delay = self->nextthink + self->wait;
+	}
+
+	if (!self->speed)
+		self->speed = 1000;
+
+#ifdef ROGUE
+	if(self->targetname)		// toggleable
+	{
+		self->use = trigger_push_use;
+		if(self->spawnflags & PUSH_START_OFF)
+			self->solid = SOLID_NOT;
+	}
+	else if(self->spawnflags & PUSH_START_OFF)
+	{
+		gi.dprintf ("trigger_push is START_OFF but not targeted.\n");
+		self->svflags = 0;
+		self->touch = NULL;
+		self->solid = SOLID_BSP;
+		self->movetype = MOVETYPE_PUSH;
+	}
+#endif //ROGUE
+
+	gi.linkentity (self);
+
+}
+
+#else //XATRIX
 
 /*QUAKED trigger_push (.5 .5 .5) ? PUSH_ONCE
 Pushes the player
@@ -409,8 +558,28 @@ void SP_trigger_push (edict_t *self)
 	self->touch = trigger_push_touch;
 	if (!self->speed)
 		self->speed = 1000;
+
+#ifdef ROGUE
+	if(self->targetname)		// toggleable
+	{
+		self->use = trigger_push_use;
+		if(self->spawnflags & PUSH_START_OFF)
+			self->solid = SOLID_NOT;
+	}
+	else if(self->spawnflags & PUSH_START_OFF)
+	{
+		gi.dprintf ("trigger_push is START_OFF but not targeted.\n");
+		self->svflags = 0;
+		self->touch = NULL;
+		self->solid = SOLID_BSP;
+		self->movetype = MOVETYPE_PUSH;
+	}
+#endif //ROGUE
+
 	gi.linkentity (self);
 }
+
+#endif //XATRIX
 
 
 /*
@@ -510,6 +679,17 @@ the value of "gravity".  1.0 is standard
 gravity for the level.
 */
 
+#ifdef ROGUE
+void trigger_gravity_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	if (self->solid == SOLID_NOT)
+		self->solid = SOLID_TRIGGER;
+	else
+		self->solid = SOLID_NOT;
+	gi.linkentity (self);
+}
+#endif //ROGUE
+
 void trigger_gravity_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
 {
 	other->gravity = self->gravity;
@@ -525,8 +705,23 @@ void SP_trigger_gravity (edict_t *self)
 	}
 
 	InitTrigger (self);
+#ifdef ROGUE
+	self->gravity = atof(st.gravity);
+
+	if(self->spawnflags & 1)				// TOGGLE
+		self->use = trigger_gravity_use;
+
+	if(self->spawnflags & 2)				// START_OFF
+	{
+		self->use = trigger_gravity_use;
+		self->solid = SOLID_NOT;
+	}
+#else //ROGUE
 	self->gravity = atoi(st.gravity);
+#endif //ROGUE
 	self->touch = trigger_gravity_touch;
+
+	gi.linkentity (self);
 }
 
 
@@ -577,3 +772,137 @@ void SP_trigger_monsterjump (edict_t *self)
 	self->movedir[2] = st.height;
 }
 
+#ifdef TRIGGER_LOG
+
+/*
+==============================================================================
+
+trigger_log
+
+==============================================================================
+*/
+
+/*QUAKED trigger_log (.5 .5 .5) ? nomessage
+writes a message to the log file the first time triggered
+can be retriggered after not being triggered for 0.2 seconds
+
+"message"		message to print
+
+*/
+
+#define TRIGGER_STATE_ACTIVE			0
+#define TRIGGER_STATE_NONACTIVE		1
+
+void trigger_log_reset(edict_t *self)
+{
+	self->count = TRIGGER_STATE_ACTIVE;
+} //end of the function trigger_log_reset
+
+void trigger_log_touch(edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+{
+	//only clients
+	if (!other->client) return;
+	//
+	self->nextthink = level.time + FRAMETIME * 2;
+	self->think = trigger_log_reset;
+	//if active output message
+	if (self->count == TRIGGER_STATE_ACTIVE)
+	{
+		Log_WriteTimeStamped("%s", self->message);
+	} //end if
+	self->count = TRIGGER_STATE_NONACTIVE;
+} //end of the function trigger_log_touch
+
+void SP_trigger_log(edict_t *self)
+{
+	InitTrigger(self);
+
+	self->count = TRIGGER_STATE_ACTIVE;
+	self->touch = trigger_log_touch;
+} //end of the function SP_trigger_log
+
+#endif //TRIGGER_LOG
+
+#ifdef TRIGGER_COUNTING
+/*
+==============================================================================
+
+trigger_counting
+
+==============================================================================
+*/
+
+/*QUAKED trigger_counting (.5 .5 .5) ? nomessage
+Acts as an intermediary for an action that takes multiple inputs.
+
+"count"			initial count value (default 2)
+"targetname"	doors with the same "target" field will be set in the correct state
+"style"			state the door will be set to when "count" reached zero
+					the door will be set out of of this state when "count" is unequal zero
+					possible "style" values: STATE_TOP STATE_BOTTOM
+
+if the counter has counted down to zero, it will set the set the target into the given state "style"
+*/
+
+#define	STATE_TOP			0
+#define	STATE_BOTTOM		1
+
+//other is for instance the button activating
+//other->count is used to determine to count up or down
+void trigger_counting_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	edict_t *t;
+
+	//add the count of the other
+	self->count += other->count;
+
+	if (self->target)
+	{
+		t = NULL;
+		while ((t = G_Find (t, FOFS(targetname), self->target)))
+		{
+			//if it is another trigger counting
+			if (!Q_stricmp(t->classname, "trigger_counting"))
+			{
+				if (self->count) t->count++;
+				else t->count--;
+			} //end if
+			else
+			{
+				//
+				if (!t->use) continue;
+				//set the door in ther correct state
+				if (!self->count)
+				{
+					if (t->moveinfo.state != self->style)
+					{
+						t->use(t, self, activator);
+					} //end if
+				} //end if
+				else
+				{
+					if (t->moveinfo.state == self->style)
+					{
+					t->use(t, self, activator);
+					} //end if
+				} //end else
+			} //end else
+		} //end while
+	} //end if
+} //end of the function trigger_count_target
+
+void SP_trigger_counting(edict_t *self)
+{
+	if (!self->target)
+	{
+		gi.dprintf("trigger_counting without target\n");
+	} //end if
+	if (self->style != STATE_TOP && self->style != STATE_BOTTOM)
+	{
+		gi.dprintf("trigger_count with invalid style\n");
+		self->style = STATE_TOP;
+	} //end if
+	self->use = trigger_counting_use;
+} //end of the function SP_trigger_counting
+
+#endif //TRIGGER_COUNTING

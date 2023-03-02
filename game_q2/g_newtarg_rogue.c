@@ -1,5 +1,7 @@
 #include "g_local.h"
 
+#ifdef ROGUE
+
 //==========================================================
 
 /*QUAKED target_steam (1 0 0) (-8 -8 -8) (8 8 8)
@@ -350,3 +352,5 @@ void SP_target_orb(edict_t *ent)
 	gi.linkentity (ent);
 }
 
+
+#endif //ROGUE

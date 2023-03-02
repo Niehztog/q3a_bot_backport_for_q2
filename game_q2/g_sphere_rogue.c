@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 // g_sphere.c
 // pmack
 // april 1998
@@ -7,6 +11,8 @@
 // vengeance - kills person who killed you.
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 #define DEFENDER_LIFESPAN	30
 #define HUNTER_LIFESPAN		30
@@ -787,3 +793,5 @@ void Vengeance_Launch (edict_t *self)
 	sphere = Sphere_Spawn (self, SPHERE_VENGEANCE);	
 	Own_Sphere (self, sphere);
 }
+
+#endif //ROGUE

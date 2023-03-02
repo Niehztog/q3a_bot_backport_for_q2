@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 /*
 ==============================================================================
 
@@ -9,7 +13,10 @@ black widow, part 2
 // timestamp used to prevent rapid fire of melee attack
 
 #include "g_local.h"
-#include "m_widow2.h"
+
+#ifdef ROGUE
+
+#include "m_widow2_rogue.h"
 
 #define	NUM_STALKERS_SPAWNED		6		// max # of stalkers she can spawn
 
@@ -118,7 +125,7 @@ void Widow2Beam (edict_t *self)
 		target[2] += self->enemy->viewheight-10;
 		VectorSubtract (target, start, forward);
 		VectorNormalize (forward);
-		monster_fire_heat (self, start, forward, vec3_origin, 10, 50, flashnum);
+		monster_fire_heat2 (self, start, forward, vec3_origin, 10, 50, flashnum);
 	}
 	else if ((self->s.frame >= FRAME_spawn04) && (self->s.frame <= FRAME_spawn14))
 	{
@@ -134,7 +141,7 @@ void Widow2Beam (edict_t *self)
 		vec[YAW] -= sweep_angles[flashnum-MZ2_WIDOW2_BEAM_SWEEP_1];
 
 		AngleVectors (vec, forward, NULL, NULL);
-		monster_fire_heat (self, start, forward, vec3_origin, 10, 50, flashnum);
+		monster_fire_heat2 (self, start, forward, vec3_origin, 10, 50, flashnum);
 /*
 		if (self->s.frame == FRAME_spawn04)
 		{
@@ -165,7 +172,7 @@ void Widow2Beam (edict_t *self)
 		VectorSubtract (target, start, forward);
 		VectorNormalize (forward);
 
-		monster_fire_heat (self, start, forward, vec3_origin, 10, 50, 0);
+		monster_fire_heat2 (self, start, forward, vec3_origin, 10, 50, 0);
 	}	
 }
 
@@ -1790,3 +1797,5 @@ void ThrowArm2 (edict_t *self)
 		gi.soundindex ("misc/fhit3.wav"), false);
 	ThrowWidowGibLoc (self, "models/objects/gibs/sm_meat/tris.md2", 300, GIB_ORGANIC, startpoint, false);
 }
+
+#endif //ROGUE

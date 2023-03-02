@@ -3,6 +3,9 @@
 
 qboolean	Pickup_Weapon (edict_t *ent, edict_t *other);
 void		Use_Weapon (edict_t *ent, gitem_t *inv);
+#ifdef XATRIX
+void Use_Weapon2 (edict_t *ent, gitem_t *item);
+#endif //XATRIX
 void		Drop_Weapon (edict_t *ent, gitem_t *inv);
 
 void Weapon_Blaster (edict_t *ent);
@@ -16,6 +19,28 @@ void Weapon_Grenade (edict_t *ent);
 void Weapon_GrenadeLauncher (edict_t *ent);
 void Weapon_Railgun (edict_t *ent);
 void Weapon_BFG (edict_t *ent);
+
+#ifdef XATRIX
+// RAFAEL
+void Weapon_Ionripper (edict_t *ent);
+void Weapon_Phalanx (edict_t *ent);
+void Weapon_Trap (edict_t *ent);
+#endif //XATRIX
+
+#ifdef ROGUE
+//=========
+//Rogue Weapons
+void Weapon_ChainFist (edict_t *ent);
+void Weapon_Disintegrator (edict_t *ent);
+void Weapon_ETF_Rifle (edict_t *ent);
+void Weapon_Heatbeam (edict_t *ent);
+void Weapon_Prox (edict_t *ent);
+void Weapon_Tesla (edict_t *ent);
+void Weapon_ProxLauncher (edict_t *ent);
+//void Weapon_Nuke (edict_t *ent);
+//Rogue Weapons
+//=========
+#endif //ROGUE
 
 gitem_armor_t jacketarmor_info	= { 25,  50, .30, .00, ARMOR_JACKET};
 gitem_armor_t combatarmor_info	= { 50, 100, .60, .30, ARMOR_COMBAT};
@@ -31,7 +56,12 @@ static int	power_shield_index;
 #define HEALTH_TIMED		2
 
 void Use_Quad (edict_t *ent, gitem_t *item);
-static int	quad_drop_timeout_hack;
+static int quad_drop_timeout_hack;
+
+#ifdef XATRIX
+void Use_QuadFire (edict_t *ent, gitem_t *item);
+static int	quad_fire_drop_timeout_hack;
+#endif //XATRIX
 
 //======================================================================
 
@@ -107,14 +137,49 @@ void DoRespawn (edict_t *ent)
 
 		master = ent->teammaster;
 
-		for (count = 0, ent = master; ent; ent = ent->chain, count++)
-			;
+#ifdef ZOID
+		//in ctf, when we are weapons stay, only the master of a team of weapons
+		//is spawned
+		if (ctf->value &&
+			((int)dmflags->value & DF_WEAPONS_STAY) &&
+			master->item && (master->item->flags & IT_WEAPON))
+		{
+			ent = master;
+		} //end if
+		else
+#endif //ZOID
+		{
 
-		choice = rand() % count;
+			for (count = 0, ent = master; ent; ent = ent->chain, count++)
+				;
 
-		for (count = 0, ent = master; count < choice; ent = ent->chain, count++)
-			;
+			choice = rand() % count;
+
+			for (count = 0, ent = master; count < choice; ent = ent->chain, count++)
+				;
+		}
 	}
+
+#ifdef ROGUE
+//=====
+//ROGUE
+	if(randomrespawn && randomrespawn->value)
+	{
+		edict_t *newEnt;
+
+		newEnt = DoRandomRespawn (ent);
+		
+		// if we've changed entities, then do some sleight of hand.
+		// otherwise, the old entity will respawn
+		if(newEnt)
+		{
+			G_FreeEdict (ent);
+			ent = newEnt;
+		}
+	}
+//ROGUE
+//=====
+#endif //ROGUE
 
 	ent->svflags &= ~SVF_NOCLIENT;
 	ent->solid = SOLID_TRIGGER;
@@ -158,8 +223,23 @@ qboolean Pickup_Powerup (edict_t *ent, edict_t *other)
 		{
 			if ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM))
 				quad_drop_timeout_hack = (ent->nextthink - level.time) / FRAMETIME;
+
+#ifdef ROGUE
+			if(!ent->item->use)
+				gi.dprintf("Powerup has no use function!\n");
+			else
+#endif //ROGUE
+				ent->item->use (other, ent->item);
+		}
+#ifdef XATRIX
+		// RAFAEL
+		else if (((int)dmflags->value & DF_INSTANT_ITEMS) || ((ent->item->use == Use_QuadFire) && (ent->spawnflags & DROPPED_PLAYER_ITEM)))
+		{
+			if ((ent->item->use == Use_QuadFire) && (ent->spawnflags & DROPPED_PLAYER_ITEM))
+				quad_fire_drop_timeout_hack = (ent->nextthink - level.time) / FRAMETIME;
 			ent->item->use (other, ent->item);
 		}
+#endif //XATRIX
 	}
 
 	return true;
@@ -204,6 +284,10 @@ qboolean Pickup_Bandolier (edict_t *ent, edict_t *other)
 	gitem_t	*item;
 	int		index;
 
+#ifdef BOT
+	other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+#endif //BOT
+
 	if (other->client->pers.max_bullets < 250)
 		other->client->pers.max_bullets = 250;
 	if (other->client->pers.max_shells < 150)
@@ -212,6 +296,22 @@ qboolean Pickup_Bandolier (edict_t *ent, edict_t *other)
 		other->client->pers.max_cells = 250;
 	if (other->client->pers.max_slugs < 75)
 		other->client->pers.max_slugs = 75;
+
+#ifdef XATRIX
+	// RAFAEL
+	if (other->client->pers.max_magslug < 75)
+		other->client->pers.max_magslug = 75;
+#endif //XATRIX
+#ifdef ROGUE
+	//PMM
+	if (other->client->pers.max_flechettes < 250)
+		other->client->pers.max_flechettes = 250;
+#ifndef KILL_DISRUPTOR
+	if (other->client->pers.max_rounds < 150)
+		other->client->pers.max_rounds = 150;
+#endif
+	//pmm
+#endif //ROGUE
 
 	item = FindItem("Bullets");
 	if (item)
@@ -242,6 +342,10 @@ qboolean Pickup_Pack (edict_t *ent, edict_t *other)
 	gitem_t	*item;
 	int		index;
 
+#ifdef BOT
+	other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+#endif //BOT
+
 	if (other->client->pers.max_bullets < 300)
 		other->client->pers.max_bullets = 300;
 	if (other->client->pers.max_shells < 200)
@@ -254,6 +358,21 @@ qboolean Pickup_Pack (edict_t *ent, edict_t *other)
 		other->client->pers.max_cells = 300;
 	if (other->client->pers.max_slugs < 100)
 		other->client->pers.max_slugs = 100;
+#ifdef XATRIX
+	// RAFAEL
+	if (other->client->pers.max_magslug < 100)
+		other->client->pers.max_magslug = 100;
+#endif //XATRIX
+#ifdef ROGUE
+	//PMM
+	if (other->client->pers.max_flechettes < 200)
+		other->client->pers.max_flechettes = 200;
+#ifndef KILL_DISRUPTOR
+	if (other->client->pers.max_rounds < 200)
+		other->client->pers.max_rounds = 200;
+#endif
+	//pmm
+#endif //ROGUE
 
 	item = FindItem("Bullets");
 	if (item)
@@ -309,11 +428,266 @@ qboolean Pickup_Pack (edict_t *ent, edict_t *other)
 			other->client->pers.inventory[index] = other->client->pers.max_slugs;
 	}
 
+#ifdef XATRIX
+	// RAFAEL
+	item = FindItem ("Mag Slug");
+	if (item)
+	{
+		index = ITEM_INDEX(item);
+		other->client->pers.inventory[index] += item->quantity;
+		if (other->client->pers.inventory[index] > other->client->pers.max_magslug)
+			other->client->pers.inventory[index] = other->client->pers.max_magslug;
+	}
+#endif //XATRIX
+
+#ifdef ROGUE
+//PMM
+	item = FindItem("Flechettes");
+	if (item)
+	{
+		index = ITEM_INDEX(item);
+		other->client->pers.inventory[index] += item->quantity;
+		if (other->client->pers.inventory[index] > other->client->pers.max_flechettes)
+			other->client->pers.inventory[index] = other->client->pers.max_flechettes;
+	}
+#ifndef KILL_DISRUPTOR
+	item = FindItem("Rounds");
+	if (item)
+	{
+		index = ITEM_INDEX(item);
+		other->client->pers.inventory[index] += item->quantity;
+		if (other->client->pers.inventory[index] > other->client->pers.max_rounds)
+			other->client->pers.inventory[index] = other->client->pers.max_rounds;
+	}
+#endif
+//pmm
+#endif //ROGUE
+
 	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
 		SetRespawn (ent, ent->item->quantity);
 
 	return true;
 }
+
+#ifdef ROGUE
+// ================
+// PMM
+qboolean Pickup_Nuke (edict_t *ent, edict_t *other)
+{
+	int		quantity;
+
+//	if (!deathmatch->value)
+//		return;
+	quantity = other->client->pers.inventory[ITEM_INDEX(ent->item)];
+//	if ((skill->value == 1 && quantity >= 2) || (skill->value >= 2 && quantity >= 1))
+//		return false;
+
+	if (quantity >= 1)
+		return false;
+
+	if ((coop->value) && (ent->item->flags & IT_STAY_COOP) && (quantity > 0))
+		return false;
+
+	other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+
+	if (deathmatch->value)
+	{
+		if (!(ent->spawnflags & DROPPED_ITEM) )
+			SetRespawn (ent, ent->item->quantity);
+	}
+
+	return true;
+}
+
+// ================
+// PGM
+void Use_IR (edict_t *ent, gitem_t *item)
+{
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	if (ent->client->ir_framenum > level.framenum)
+		ent->client->ir_framenum += 600;
+	else
+		ent->client->ir_framenum = level.framenum + 600;
+
+	gi.sound(ent, CHAN_ITEM, gi.soundindex("misc/ir_start.wav"), 1, ATTN_NORM, 0);
+}
+
+void Use_Double (edict_t *ent, gitem_t *item)
+{
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	if (ent->client->double_framenum > level.framenum)
+		ent->client->double_framenum += 300;
+	else
+		ent->client->double_framenum = level.framenum + 300;
+
+	gi.sound(ent, CHAN_ITEM, gi.soundindex("misc/ddamage1.wav"), 1, ATTN_NORM, 0);
+}
+
+/*
+void Use_Torch (edict_t *ent, gitem_t *item)
+{
+	ent->client->torch_framenum = level.framenum + 600;
+}
+*/
+
+void Use_Compass (edict_t *ent, gitem_t *item)
+{
+	int ang;
+
+	ang = (int)(ent->client->v_angle[1]);
+	if(ang<0)
+		ang += 360;
+
+	gi.cprintf(ent, PRINT_HIGH, "Origin: %0.0f,%0.0f,%0.0f    Dir: %d\n", ent->s.origin[0], ent->s.origin[1],
+				ent->s.origin[2], ang);
+}
+
+void Use_Nuke (edict_t *ent, gitem_t *item)
+{
+	vec3_t	forward, right, start;
+	float	speed;
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	AngleVectors (ent->client->v_angle, forward, right, NULL);
+
+	VectorCopy (ent->s.origin, start);
+	speed = 100;
+	fire_nuke (ent, start, forward, speed);
+}
+
+void Use_Doppleganger (edict_t *ent, gitem_t *item)
+{
+	vec3_t		forward, right;
+	vec3_t		createPt, spawnPt;
+	vec3_t		ang;
+
+	VectorClear(ang);
+	ang[YAW] = ent->client->v_angle[YAW];
+	AngleVectors (ang, forward, right, NULL);
+
+	VectorMA(ent->s.origin, 48, forward, createPt);
+
+	if(!FindSpawnPoint(createPt, ent->mins, ent->maxs, spawnPt, 32))
+		return;
+
+	if(!CheckGroundSpawnPoint(spawnPt, ent->mins, ent->maxs, 64, -1))
+		return;
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	SpawnGrow_Spawn (spawnPt, 0);
+	fire_doppleganger (ent, spawnPt, forward);
+}
+
+qboolean Pickup_Doppleganger (edict_t *ent, edict_t *other)
+{
+	int		quantity;
+
+	if(!(deathmatch->value))		// item is DM only
+		return false;
+
+	quantity = other->client->pers.inventory[ITEM_INDEX(ent->item)];
+	if (quantity >= 1)		// FIXME - apply max to dopplegangers
+		return false;
+
+	other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+
+	if (!(ent->spawnflags & DROPPED_ITEM) )
+		SetRespawn (ent, ent->item->quantity);
+
+	return true;
+}
+
+
+qboolean Pickup_Sphere (edict_t *ent, edict_t *other)
+{
+	int		quantity;
+
+	if(other->client && other->client->owned_sphere)
+	{
+//		gi.cprintf(other, PRINT_HIGH, "Only one sphere to a customer!\n");
+		return false;
+	}
+
+	quantity = other->client->pers.inventory[ITEM_INDEX(ent->item)];
+	if ((skill->value == 1 && quantity >= 2) || (skill->value >= 2 && quantity >= 1))
+		return false;
+
+	if ((coop->value) && (ent->item->flags & IT_STAY_COOP) && (quantity > 0))
+		return false;
+
+	other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+
+	if (deathmatch->value)
+	{
+		if (!(ent->spawnflags & DROPPED_ITEM) )
+			SetRespawn (ent, ent->item->quantity);
+		if (((int)dmflags->value & DF_INSTANT_ITEMS))
+		{
+//PGM
+			if(ent->item->use)
+				ent->item->use (other, ent->item);
+			else
+				gi.dprintf("Powerup has no use function!\n");
+//PGM
+		}
+	}
+
+	return true;
+}
+
+void Use_Defender (edict_t *ent, gitem_t *item)
+{
+	if(ent->client && ent->client->owned_sphere)
+	{
+		gi.cprintf(ent, PRINT_HIGH, "Only one sphere at a time!\n");
+		return;
+	}
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	Defender_Launch (ent);
+}
+
+void Use_Hunter (edict_t *ent, gitem_t *item)
+{
+	if(ent->client && ent->client->owned_sphere)
+	{
+		gi.cprintf(ent, PRINT_HIGH, "Only one sphere at a time!\n");
+		return;
+	}
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	Hunter_Launch (ent);
+}
+
+void Use_Vengeance (edict_t *ent, gitem_t *item)
+{
+	if(ent->client && ent->client->owned_sphere)
+	{
+		gi.cprintf(ent, PRINT_HIGH, "Only one sphere at a time!\n");
+		return;
+	}
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	Vengeance_Launch (ent);
+}
+
+// PGM
+// ================
+#endif //ROGUE
 
 //======================================================================
 
@@ -341,6 +715,36 @@ void Use_Quad (edict_t *ent, gitem_t *item)
 
 	gi.sound(ent, CHAN_ITEM, gi.soundindex("items/damage.wav"), 1, ATTN_NORM, 0);
 }
+
+//======================================================================
+
+#ifdef XATRIX
+// RAFAEL
+void Use_QuadFire (edict_t *ent, gitem_t *item)
+{
+	int		timeout;
+
+	ent->client->pers.inventory[ITEM_INDEX(item)]--;
+	ValidateSelectedItem (ent);
+
+	if (quad_fire_drop_timeout_hack)
+	{
+		timeout = quad_fire_drop_timeout_hack;
+		quad_fire_drop_timeout_hack = 0;
+	}
+	else
+	{
+		timeout = 300;
+	}
+
+	if (ent->client->quadfire_framenum > level.framenum)
+		ent->client->quadfire_framenum += timeout;
+	else
+		ent->client->quadfire_framenum = level.framenum + timeout;
+
+	gi.sound(ent, CHAN_ITEM, gi.soundindex("items/quadfire1.wav"), 1, ATTN_NORM, 0);
+}
+#endif //XATRIX
 
 //======================================================================
 
@@ -445,6 +849,30 @@ qboolean Add_Ammo (edict_t *ent, gitem_t *item, int count)
 		max = ent->client->pers.max_cells;
 	else if (item->tag == AMMO_SLUGS)
 		max = ent->client->pers.max_slugs;
+#ifdef XATRIX
+	// RAFAEL
+	else if (item->tag == AMMO_MAGSLUG)
+		max = ent->client->pers.max_magslug;
+	// RAFAEL
+	else if (item->tag == AMMO_TRAP)
+		max = ent->client->pers.max_trap;
+#endif //XATRIX
+#ifdef ROGUE
+// ROGUE
+//	else if (item->tag == AMMO_MINES)
+//		max = ent->client->pers.max_mines;
+	else if (item->tag == AMMO_FLECHETTES)
+		max = ent->client->pers.max_flechettes;
+	else if (item->tag == AMMO_PROX)
+		max = ent->client->pers.max_prox;
+	else if (item->tag == AMMO_TESLA)
+		max = ent->client->pers.max_tesla;
+#ifndef KILL_DISRUPTOR
+	else if (item->tag == AMMO_DISRUPTOR)
+		max = ent->client->pers.max_rounds;
+#endif
+// ROGUE
+#endif //ROGUE
 	else
 		return false;
 
@@ -521,7 +949,11 @@ void Drop_Ammo (edict_t *ent, gitem_t *item)
 
 void MegaHealth_think (edict_t *self)
 {
-	if (self->owner->health > self->owner->max_health)
+	if (self->owner->health > self->owner->max_health
+#ifdef ZOID
+		&& !CTFHasRegeneration(self->owner)
+#endif //ZOID
+		)
 	{
 		self->nextthink = level.time + 1;
 		self->owner->health -= 1;
@@ -540,7 +972,31 @@ qboolean Pickup_Health (edict_t *ent, edict_t *other)
 		if (other->health >= other->max_health)
 			return false;
 
+#ifdef ZOID
+	if (ctf->value && other->health >= 250 && ent->count > 25)
+		return false;
+#endif //ZOID
+
 	other->health += ent->count;
+
+#ifdef ROGUE
+	// PMM - health sound fix
+	/*
+	if (ent->count == 2)
+		ent->item->pickup_sound = "items/s_health.wav";
+	else if (ent->count == 10)
+		ent->item->pickup_sound = "items/n_health.wav";
+	else if (ent->count == 25)
+		ent->item->pickup_sound = "items/l_health.wav";
+	else // (ent->count == 100)
+		ent->item->pickup_sound = "items/m_health.wav";
+	*/
+#endif //ROGUE
+
+#ifdef ZOID
+	if (ctf->value && other->health > 250 && ent->count > 25)
+		other->health = 250;
+#endif //ZOID
 
 	if (!(ent->style & HEALTH_IGNORE_MAX))
 	{
@@ -548,7 +1004,11 @@ qboolean Pickup_Health (edict_t *ent, edict_t *other)
 			other->health = other->max_health;
 	}
 
-	if (ent->style & HEALTH_TIMED)
+	if (ent->style & HEALTH_TIMED
+#ifdef ZOID
+		&& !CTFHasRegeneration(other)
+#endif //ZOID
+		)
 	{
 		ent->think = MegaHealth_think;
 		ent->nextthink = level.time + 5;
@@ -750,6 +1210,10 @@ void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf
 	if (!ent->item->pickup)
 		return;		// not a grabbable item?
 
+#ifdef OBSERVER
+	if (other->flags & FL_OBSERVER) return;
+#endif //OBSERVER
+
 	taken = ent->item->pickup(ent, other);
 
 	if (taken)
@@ -833,7 +1297,11 @@ edict_t *Drop_Item (edict_t *ent, gitem_t *item)
 	dropped->item = item;
 	dropped->spawnflags = DROPPED_ITEM;
 	dropped->s.effects = item->world_model_flags;
-	dropped->s.renderfx = RF_GLOW;
+	dropped->s.renderfx = RF_GLOW
+#ifdef ROGUE
+		 | RF_IR_VISIBLE		// PGM
+#endif //ROGUE
+				;
 	VectorSet (dropped->mins, -15, -15, -15);
 	VectorSet (dropped->maxs, 15, 15, 15);
 	gi.setmodel (dropped, dropped->item->world_model);
@@ -910,6 +1378,9 @@ void droptofloor (edict_t *ent)
 	if (ent->model)
 		gi.setmodel (ent, ent->model);
 	else
+#ifdef ROGUE
+		if (ent->item->world_model)	// PGM we shouldn't need this check, but paranoia...
+#endif //ROGUE
 		gi.setmodel (ent, ent->item->world_model);
 	ent->solid = SOLID_TRIGGER;
 	ent->movetype = MOVETYPE_TOSS;  
@@ -921,9 +1392,20 @@ void droptofloor (edict_t *ent)
 	tr = gi.trace (ent->s.origin, ent->mins, ent->maxs, dest, ent, MASK_SOLID);
 	if (tr.startsolid)
 	{
-		gi.dprintf ("droptofloor: %s startsolid at %s\n", ent->classname, vtos(ent->s.origin));
-		G_FreeEdict (ent);
-		return;
+#ifdef XATRIX
+		// RAFAEL
+		if (strcmp (ent->classname, "foodcube") == 0)
+		{
+			VectorCopy (ent->s.origin, tr.endpos);
+			ent->velocity[2] = 0;
+		}
+		else
+#endif //XATRIX
+		{
+			gi.dprintf ("droptofloor: %s startsolid at %s\n", ent->classname, vtos(ent->s.origin));
+			G_FreeEdict (ent);
+			return;
+		}
 	}
 
 	VectorCopy (tr.endpos, ent->s.origin);
@@ -981,6 +1463,10 @@ void PrecacheItem (gitem_t *it)
 	if (!it)
 		return;
 
+#ifdef ZOID
+	if ((it->flags & IT_CTF) && !ctf->value) return;
+#endif //ZOID
+
 	if (it->pickup_sound)
 		gi.soundindex (it->pickup_sound);
 	if (it->world_model)
@@ -1029,6 +1515,38 @@ void PrecacheItem (gitem_t *it)
 	}
 }
 
+#ifdef ROGUE
+//=================
+// Item_TriggeredSpawn - create the item marked for spawn creation
+//=================
+void Item_TriggeredSpawn (edict_t *self, edict_t *other, edict_t *activator)
+{
+//	self->nextthink = level.time + 2 * FRAMETIME;    // items start after other solids
+//	self->think = droptofloor;
+	self->svflags &= ~SVF_NOCLIENT;
+	self->use = NULL;
+	if(strcmp(self->classname, "key_power_cube"))	// leave them be on key_power_cube..
+		self->spawnflags = 0;
+	droptofloor (self);
+}
+
+//=================
+// SetTriggeredSpawn - set up an item to spawn in later.
+//=================
+void SetTriggeredSpawn (edict_t *ent)
+{
+	// don't do anything on key_power_cubes.
+	if(!strcmp(ent->classname, "key_power_cube"))
+		return;
+
+	ent->think = NULL;
+	ent->nextthink = 0;
+	ent->use = Item_TriggeredSpawn;
+	ent->svflags |= SVF_NOCLIENT;
+	ent->solid = SOLID_NOT;
+}
+#endif //ROGUE
+
 /*
 ============
 SpawnItem
@@ -1041,9 +1559,39 @@ be on an entity that hasn't spawned yet.
 */
 void SpawnItem (edict_t *ent, gitem_t *item)
 {
-	PrecacheItem (item);
+#ifdef ROCKETARENA
+	if (ra->value)
+	{
+		//no weapons in rocket arena and if set no items at all
+		if (gi.cvar("noitems", "0", 0)->value || (item->flags & IT_WEAPON))
+		{
+			G_FreeEdict(ent);
+			return;
+		} //end if
+	} //end if
+#endif //ROCKETARENA
 
-	if (ent->spawnflags)
+#ifdef ROGUE
+#if KILL_DISRUPTOR
+	if ((!strcmp(ent->classname, "ammo_disruptor")) || (!strcmp(ent->classname, "weapon_disintegrator")))
+	{
+		G_FreeEdict (ent);
+		return;
+	}
+#endif //KILL_DISRUPTOR
+
+// PGM - since the item may be freed by the following rules, go ahead
+//		 and move the precache until AFTER the following rules have been checked.
+//		 keep an eye on this.
+#else //ROGUE
+	PrecacheItem (item);
+#endif //ROGUE
+
+	if (ent->spawnflags
+#ifdef ROGUE
+				> 1
+#endif //ROGUE
+				)
 	{
 		if (strcmp(ent->classname, "key_power_cube") != 0)
 		{
@@ -1070,6 +1618,22 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				G_FreeEdict (ent);
 				return;
 			}
+#ifdef ROGUE
+			//=====
+			//ROGUE
+			if (item->pickup  == Pickup_Sphere)
+			{
+				G_FreeEdict (ent);
+				return;
+			}
+			if (item->pickup == Pickup_Doppleganger)
+			{
+				G_FreeEdict (ent);
+				return;
+			}
+			//ROGUE
+			//=====
+#endif //ROGUE
 		}
 		if ( (int)dmflags->value & DF_NO_HEALTH )
 		{
@@ -1087,7 +1651,59 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				return;
 			}
 		}
+#ifdef ROGUE
+		if ( (int)dmflags->value & DF_NO_MINES )
+		{
+			if ( !strcmp(ent->classname, "ammo_prox") || 
+				 !strcmp(ent->classname, "ammo_tesla") )
+			{
+				G_FreeEdict (ent);
+				return;
+			}
+		}
+		if ( (int)dmflags->value & DF_NO_NUKES )
+		{
+			if ( !strcmp(ent->classname, "ammo_nuke") )
+			{
+				G_FreeEdict (ent);
+				return;
+			}
+		}
+		if ( (int)dmflags->value & DF_NO_SPHERES )
+		{
+			if (item->pickup  == Pickup_Sphere)
+			{
+				G_FreeEdict (ent);
+				return;
+			}
+		}
+#endif //ROGUE
 	}
+
+#ifdef ROGUE
+//==========
+//ROGUE
+// DM only items
+	if (!deathmatch->value)
+	{
+		if (item->pickup == Pickup_Doppleganger || item->pickup == Pickup_Nuke)
+		{
+			G_FreeEdict (ent);
+			return;
+		}
+		if ((item->use == Use_Vengeance) || (item->use == Use_Hunter))
+		{
+			G_FreeEdict (ent);
+			return;
+		}
+	}
+//ROGUE
+//==========
+
+//PGM 
+	PrecacheItem (item);		
+//PGM
+#endif //ROGUE
 
 	if (coop->value && (strcmp(ent->classname, "key_power_cube") == 0))
 	{
@@ -1101,6 +1717,17 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 		item->drop = NULL;
 	}
 
+#ifdef ZOID
+	//Don't spawn the flags unless enabled
+	if (!ctf->value &&
+		(strcmp(ent->classname, "item_flag_team1") == 0 ||
+		strcmp(ent->classname, "item_flag_team2") == 0))
+	{
+		G_FreeEdict(ent);
+		return;
+	} //end if
+#endif //ZOID
+
 	ent->item = item;
 	ent->nextthink = level.time + 2 * FRAMETIME;    // items start after other solids
 	ent->think = droptofloor;
@@ -1108,6 +1735,15 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 	ent->s.renderfx = RF_GLOW;
 	if (ent->model)
 		gi.modelindex (ent->model);
+
+#ifdef ZOID
+	//flags are server animated and have special handling
+	if (strcmp(ent->classname, "item_flag_team1") == 0 ||
+		strcmp(ent->classname, "item_flag_team2") == 0)
+	{
+		ent->think = CTFFlagSetup;
+	} //end if
+#endif //ZOID
 }
 
 //======================================================================
@@ -1456,7 +2092,11 @@ always owned, never in the world
 	{
 		"weapon_hyperblaster", 
 		Pickup_Weapon,
+#ifdef XATRIX
+		Use_Weapon2,
+#else //XATRIX
 		Use_Weapon,
+#endif //XATRIX
 		Drop_Weapon,
 		Weapon_HyperBlaster,
 		"misc/w_pkup.wav",
@@ -1479,7 +2119,11 @@ always owned, never in the world
 	{
 		"weapon_railgun", 
 		Pickup_Weapon,
+#ifdef XATRIX
+		Use_Weapon2,
+#else //XATRIX
 		Use_Weapon,
+#endif //XATRIX
 		Drop_Weapon,
 		Weapon_Railgun,
 		"misc/w_pkup.wav",
@@ -1495,6 +2139,10 @@ always owned, never in the world
 		NULL,
 		0,
 /* precache */ "weapons/rg_hum.wav"
+#ifdef BOT
+		//id bug fix (no big deal): no sound precached for the railgun fire and reload
+		" weapons/railgf1a.wav" " weapons/railgr1a.wav"
+#endif //BOT
 	},
 
 /*QUAKED weapon_bfg (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -2092,6 +2740,861 @@ tank commander's head
 /* precache */ "items/s_health.wav items/n_health.wav items/l_health.wav items/m_health.wav"
 	},
 
+#ifdef ZOID
+
+/* weapon_grapple (.3 .3 1) (-16 -16 -16) (16 16 16)
+always owned, never in the world
+*/
+	{
+		"weapon_grapple", 
+		NULL,
+		Use_Weapon,
+		NULL,
+		CTFWeapon_Grapple,
+		"misc/w_pkup.wav",
+		NULL, 0,
+		"models/weapons/grapple/tris.md2",
+/* icon */		"w_grapple",
+/* pickup */	"Grapple",
+		0,
+		0,
+		NULL,
+		IT_WEAPON|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "weapons/grapple/grfire.wav weapons/grapple/grpull.wav weapons/grapple/grhang.wav weapons/grapple/grreset.wav weapons/grapple/grhit.wav models/weapons/grapple/hook/tris.md2"
+	},
+
+#if 0
+/*QUAKED weapon_laser (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"weapon_laser",
+		Pickup_Weapon,
+		Use_Weapon,
+		Drop_Weapon,
+		Weapon_Laser,
+		"misc/w_pkup.wav",
+		"models/weapons/g_laser/tris.md2", EF_ROTATE,
+		"models/weapons/v_laser/tris.md2",
+/* icon */		"w_bfg",
+/* pickup */	"Flashlight Laser",
+		0,
+		1,
+		"Cells",
+		IT_WEAPON|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ ""
+	},
+#endif //0
+
+/*QUAKED item_flag_team1 (1 0.2 0) (-16 -16 -24) (16 16 32)
+*/
+	{
+		"item_flag_team1",
+		CTFPickup_Flag,
+		NULL,
+		CTFDrop_Flag, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"ctf/flagtk.wav",
+		"players/male/flag1.md2", EF_FLAG1,
+		NULL,
+/* icon */		"i_ctf1",
+/* pickup */	"Red Flag",
+/* width */		2,
+		0,
+		NULL,
+		IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/flagcap.wav"
+	},
+
+/*QUAKED item_flag_team2 (1 0.2 0) (-16 -16 -24) (16 16 32)
+*/
+	{
+		"item_flag_team2",
+		CTFPickup_Flag,
+		NULL,
+		CTFDrop_Flag, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"ctf/flagtk.wav",
+		"players/male/flag2.md2", EF_FLAG2,
+		NULL,
+/* icon */		"i_ctf2",
+/* pickup */	"Blue Flag",
+/* width */		2,
+		0,
+		NULL,
+		IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/flagcap.wav"
+	},
+
+/* Resistance Tech */
+	{
+		"item_tech1",
+		CTFPickup_Tech,
+		NULL,
+		CTFDrop_Tech, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"items/pkup.wav",
+		"models/ctf/resistance/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"tech1",
+/* pickup */	"Disruptor Shield",
+/* width */		2,
+		0,
+		NULL,
+		IT_TECH|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/tech1.wav"
+	},
+
+/* Strength Tech */
+	{
+		"item_tech2",
+		CTFPickup_Tech,
+		NULL,
+		CTFDrop_Tech, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"items/pkup.wav",
+		"models/ctf/strength/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"tech2",
+/* pickup */	"Power Amplifier",
+/* width */		2,
+		0,
+		NULL,
+		IT_TECH|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/tech2.wav ctf/tech2x.wav"
+	},
+
+/* Haste Tech */
+	{
+		"item_tech3",
+		CTFPickup_Tech,
+		NULL,
+		CTFDrop_Tech, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"items/pkup.wav",
+		"models/ctf/haste/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"tech3",
+/* pickup */	"Time Accel",
+/* width */		2,
+		0,
+		NULL,
+		IT_TECH|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/tech3.wav"
+	},
+
+/* Regeneration Tech */
+	{
+		"item_tech4",
+		CTFPickup_Tech,
+		NULL,
+		CTFDrop_Tech, //Should this be null if we don't want players to drop it manually?
+		NULL,
+		"items/pkup.wav",
+		"models/ctf/regeneration/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"tech4",
+/* pickup */	"AutoDoc",
+/* width */		2,
+		0,
+		NULL,
+		IT_TECH|IT_CTF,
+		0,
+		NULL,
+		0,
+/* precache */ "ctf/tech4.wav"
+	},
+#endif //ZOID
+
+#ifdef XATRIX
+// RAFAEL 14-APR-98
+
+/*QUAKED weapon_boomer (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+
+	{
+		"weapon_boomer",
+		Pickup_Weapon,
+		Use_Weapon,
+		Drop_Weapon,
+		Weapon_Ionripper,
+		"misc/w_pkup.wav",
+		"models/weapons/g_boom/tris.md2", EF_ROTATE,
+		"models/weapons/v_boomer/tris.md2",
+/* icon */	"w_ripper",
+/* pickup */ "Ionripper",
+		0,
+		2,
+		"Cells",
+		IT_WEAPON,
+		WEAP_BOOMER,
+		NULL,
+		0,
+/* precache */ "weapons/rg_hum.wav weapons/rippfire.wav"
+	},
+
+/*QUAKED weapon_phalanx (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"weapon_phalanx",
+		Pickup_Weapon,
+		Use_Weapon,
+		Drop_Weapon,
+		Weapon_Phalanx,
+		"misc/w_pkup.wav",
+		"models/weapons/g_shotx/tris.md2", EF_ROTATE,
+		"models/weapons/v_shotx/tris.md2",
+/* icon */	"w_phallanx",
+/* pickup */ "Phalanx",
+		0,
+		1,
+		"Mag Slug",
+		IT_WEAPON,
+		WEAP_PHALANX,
+		NULL,
+		0,
+/* precache */ "weapons/plasshot.wav"
+	},
+
+/*QUAKED ammo_trap (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"ammo_trap",
+		Pickup_Ammo,
+		Use_Weapon,
+		Drop_Ammo,
+		Weapon_Trap,
+		"misc/am_pkup.wav",
+		"models/weapons/g_trap/tris.md2", EF_ROTATE,
+		"models/weapons/v_trap/tris.md2",
+/* icon */		"a_trap",
+/* pickup */	"Trap",
+/* width */		3,
+		1,
+		"trap",
+		IT_AMMO|IT_WEAPON,
+		0,
+		NULL,
+		AMMO_TRAP,
+/* precache */ "weapons/trapcock.wav weapons/traploop.wav weapons/trapsuck.wav weapons/trapdown.wav"
+// "weapons/hgrent1a.wav weapons/hgrena1b.wav weapons/hgrenc1b.wav weapons/hgrenb1a.wav weapons/hgrenb2a.wav "
+	},
+
+/*QUAKED ammo_magslug (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"ammo_magslug",
+		Pickup_Ammo,
+		NULL,
+		Drop_Ammo,
+		NULL,
+		"misc/am_pkup.wav",
+		"models/objects/ammo/tris.md2", 0,
+		NULL,
+/* icon */		"a_mslugs",
+/* pickup */	"Mag Slug",
+/* width */		3,
+		10,
+		NULL,
+		IT_AMMO,
+		0,
+		NULL,
+		AMMO_MAGSLUG,
+/* precache */ ""
+	},
+
+/*QUAKED item_quadfire (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"item_quadfire", 
+		Pickup_Powerup,
+		Use_QuadFire,
+		Drop_General,
+		NULL,
+		"items/pkup.wav",
+		"models/items/quadfire/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_quadfire",
+
+/* pickup */	"DualFire Damage",
+/* width */		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+/* precache */ "items/quadfire1.wav items/quadfire2.wav items/quadfire3.wav"
+	},
+
+/*QUAKED key_green_key (0 .5 .8) (-16 -16 -16) (16 16 16)
+normal door key - blue
+*/
+	{
+		"key_green_key",
+		Pickup_Key,
+		NULL,
+		Drop_General,
+		NULL,
+		"items/pkup.wav",
+		"models/items/keys/green_key/tris.md2", EF_ROTATE,
+		NULL,
+		"k_green",
+		"Green Key",
+		2,
+		0,
+		NULL,
+		IT_STAY_COOP|IT_KEY,
+		0,
+		NULL,
+		0,
+/* precache */ ""
+	},
+#endif //XATRIX
+
+#ifdef ROGUE
+	// ROGUE
+/*QUAKED weapon_etf_rifle (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"weapon_etf_rifle",									// classname
+		Pickup_Weapon,										// pickup function
+		Use_Weapon,											// use function
+		Drop_Weapon,										// drop function
+		Weapon_ETF_Rifle,									// weapon think function
+		"misc/w_pkup.wav",									// pick up sound
+		"models/weapons/g_etf_rifle/tris.md2", EF_ROTATE,		// world model, world model flags
+		"models/weapons/v_etf_rifle/tris.md2",					// view model
+		"w_etf_rifle",										// icon
+		"ETF Rifle",										// name printed when picked up 
+		0,													// number of digits for statusbar
+		1,													// amount used / contained
+		"Flechettes",										// ammo type used 
+		IT_WEAPON,											// inventory flags
+		WEAP_ETFRIFLE,										// visible weapon
+		NULL,												// info (void *)
+		0,													// tag
+		"weapons/nail1.wav models/proj/flechette/tris.md2",	// precaches
+	},
+
+	// rogue
+	// ROGUE
+/*QUAKED weapon_proxlauncher (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"weapon_proxlauncher",								// classname
+		Pickup_Weapon,										// pickup
+		Use_Weapon,											// use
+		Drop_Weapon,										// drop
+		Weapon_ProxLauncher,								// weapon think
+		"misc/w_pkup.wav",									// pick up sound
+		"models/weapons/g_plaunch/tris.md2", EF_ROTATE,		// world model, world model flags
+		"models/weapons/v_plaunch/tris.md2",				// view model
+		"w_proxlaunch",										// icon
+		"Prox Launcher",									// name printed when picked up
+		0,													// number of digits for statusbar
+		1,													// amount used
+		"Prox",												// ammo type used
+		IT_WEAPON,											// inventory flags
+		WEAP_PROXLAUNCH,									// visible weapon
+		NULL,												// info (void *)
+		AMMO_PROX,											// tag
+		"weapons/grenlf1a.wav weapons/grenlr1b.wav weapons/grenlb1b.wav weapons/proxwarn.wav weapons/proxopen.wav",
+	},
+	// rogue
+	// ROGUE
+/*QUAKED weapon_plasmabeam (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/ 
+	{
+		"weapon_plasmabeam",								// classname
+		Pickup_Weapon,										// pickup function
+		Use_Weapon,											// use function
+		Drop_Weapon,										// drop function
+		Weapon_Heatbeam,									// weapon think function
+		"misc/w_pkup.wav",									// pick up sound
+		"models/weapons/g_beamer/tris.md2", EF_ROTATE,		// world model, world model flags
+		"models/weapons/v_beamer/tris.md2",					// view model
+		"w_heatbeam",											// icon
+		"Plasma Beam",											// name printed when picked up 
+		0,													// number of digits for statusbar
+		// FIXME - if this changes, change it in NoAmmoWeaponChange as well
+		2,													// amount used / contained
+		"Cells",											// ammo type used 
+		IT_WEAPON,											// inventory flags
+		WEAP_PLASMA,										// visible weapon
+		NULL,												// info (void *)
+		0,													// tag
+		"models/weapons/v_beamer2/tris.md2 weapons/bfg__l1a.wav",		// precaches
+	},
+	//rogue
+// =========================
+// ROGUE WEAPONS
+/*QUAKED weapon_chainfist (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"weapon_chainfist",									// classname
+		Pickup_Weapon,										// pickup function
+		Use_Weapon,											// use function
+		Drop_Weapon,										// drop function
+		Weapon_ChainFist,									// weapon think function
+		"misc/w_pkup.wav",									// pick up sound
+		"models/weapons/g_chainf/tris.md2", EF_ROTATE,		// world model, world model flags
+		"models/weapons/v_chainf/tris.md2",					// view model
+		"w_chainfist",										// icon
+		"Chainfist",										// name printed when picked up 
+		0,													// number of digits for statusbar
+		0,													// amount used / contained
+		NULL,												// ammo type used 
+		IT_WEAPON | IT_MELEE,								// inventory flags
+		WEAP_CHAINFIST,										// visible weapon
+		NULL,												// info (void *)
+		1,													// tag
+		"weapons/sawidle.wav weapons/sawhit.wav",			// precaches
+	},
+
+/*QUAKED weapon_disintegrator (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"weapon_disintegrator",								// classname
+		Pickup_Weapon,										// pickup function
+		Use_Weapon,											// use function
+		Drop_Weapon,										// drop function
+		Weapon_Disintegrator,								// weapon think function
+		"misc/w_pkup.wav",									// pick up sound
+		"models/weapons/g_dist/tris.md2", EF_ROTATE,		// world model, world model flags
+		"models/weapons/v_dist/tris.md2",					// view model
+		"w_disintegrator",									// icon
+		"Disruptor",										// name printed when picked up 
+		0,													// number of digits for statusbar
+		1,													// amount used / contained
+		"Rounds",											// ammo type used 
+#ifdef KILL_DISRUPTOR
+		IT_NOT_GIVEABLE,
+#else
+		IT_WEAPON,											// inventory flags
+#endif
+		WEAP_DISRUPTOR,										// visible weapon
+		NULL,												// info (void *)
+		1,													// tag
+		"models/items/spawngro/tris.md2 models/proj/disintegrator/tris.md2 weapons/disrupt.wav weapons/disint2.wav weapons/disrupthit.wav",	// precaches
+	},
+
+// ROGUE WEAPONS
+// =========================
+// =======================================
+// ROGUE AMMO
+
+/*QUAKED ammo_flechettes (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"ammo_flechettes",
+		Pickup_Ammo,
+		NULL,
+		Drop_Ammo,
+		NULL,
+		"misc/am_pkup.wav",
+		"models/ammo/am_flechette/tris.md2", 0,
+		NULL,
+		"a_flechettes",
+		"Flechettes",
+		3,
+		50,
+		NULL,
+		IT_AMMO,
+		0,
+		NULL,
+		AMMO_FLECHETTES
+	},
+/*QUAKED ammo_prox (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"ammo_prox",										// Classname
+		Pickup_Ammo,										// pickup function
+		NULL,												// use function
+		Drop_Ammo,											// drop function
+		NULL,												// weapon think function
+		"misc/am_pkup.wav",									// pickup sound
+		"models/ammo/am_prox/tris.md2", 0,					// world model, world model flags
+		NULL,												// view model
+		"a_prox",											// icon
+		"Prox",												// Name printed when picked up
+		3,													// number of digits for status bar
+		5,													// amount contained
+		NULL,												// ammo type used
+		IT_AMMO,											// inventory flags
+		0,													// vwep index
+		NULL,												// info (void *)
+		AMMO_PROX,											// tag
+		"models/weapons/g_prox/tris.md2 weapons/proxwarn.wav"	// precaches
+	},
+
+/*QUAKED ammo_tesla (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"ammo_tesla",
+		Pickup_Ammo,
+		Use_Weapon,						// PGM
+		Drop_Ammo,
+		Weapon_Tesla,					// PGM
+		"misc/am_pkup.wav",
+//		"models/weapons/g_tesla/tris.md2", 0,
+		"models/ammo/am_tesl/tris.md2", 0,
+		"models/weapons/v_tesla/tris.md2",
+		"a_tesla",
+		"Tesla",
+		3,
+		5,
+		"Tesla",												// PGM
+		IT_AMMO | IT_WEAPON,						// inventory flags
+		0,
+		NULL,										// info (void *)
+		AMMO_TESLA,									// tag
+		"models/weapons/v_tesla2/tris.md2 weapons/teslaopen.wav weapons/hgrenb1a.wav weapons/hgrenb2a.wav models/weapons/g_tesla/tris.md2"			// precache
+	},
+
+/*QUAKED ammo_nuke (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"ammo_nuke",
+		Pickup_Nuke,
+		Use_Nuke,						// PMM
+		Drop_Ammo,
+		NULL,							// PMM
+		"misc/am_pkup.wav",
+		"models/weapons/g_nuke/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_nuke",
+/* pickup */	"A-M Bomb",
+/* width */		3,
+		300, /* quantity (used for respawn time) */
+		"A-M Bomb",
+		IT_POWERUP,	
+		0,
+		NULL,
+		0,
+		"weapons/nukewarn2.wav world/rumble.wav"
+	},
+
+/*QUAKED ammo_disruptor (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"ammo_disruptor",
+		Pickup_Ammo,
+		NULL,
+		Drop_Ammo,
+		NULL,
+		"misc/am_pkup.wav",
+		"models/ammo/am_disr/tris.md2", 0,
+		NULL,
+		"a_disruptor",
+		"Rounds",		// FIXME 
+		3,
+		15,
+		NULL,
+#ifdef KILL_DISRUPTOR
+		IT_NOT_GIVEABLE,
+#else
+		IT_AMMO,											// inventory flags
+#endif
+		0,
+		NULL,
+#ifdef KILL_DISRUPTOR
+		0,
+#else
+		AMMO_DISRUPTOR,
+#endif
+	},
+// ROGUE AMMO
+// =======================================
+// ======================================
+// PGM
+
+/*QUAKED item_ir_goggles (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+gives +1 to maximum health
+*/
+	{
+		"item_ir_goggles",
+		Pickup_Powerup,
+		Use_IR,
+		Drop_General,
+		NULL,
+		"items/pkup.wav",
+		"models/items/goggles/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_ir",
+/* pickup */	"IR Goggles",
+/* width */		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+/* precache */ "misc/ir_start.wav"
+	},
+
+/*QUAKED item_double (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_double", 
+		Pickup_Powerup,
+		Use_Double,
+		Drop_General,
+		NULL,
+		"items/pkup.wav",
+		"models/items/ddamage/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_double",
+/* pickup */	"Double Damage",
+/* width */		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+/* precache */ "misc/ddamage1.wav misc/ddamage2.wav misc/ddamage3.wav"
+	},
+
+/*Q U A K E D item_torch (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+/*
+	{
+		"item_torch", 
+		Pickup_Powerup,
+		Use_Torch,
+		Drop_General,
+		NULL,
+		"items/pkup.wav",
+		"models/objects/fire/tris.md2", EF_ROTATE,
+		NULL,
+		"p_torch",
+		"torch",
+		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+	},
+*/
+
+/*QUAKED item_compass (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_compass", 
+		Pickup_Powerup,
+		Use_Compass,
+		NULL,
+		NULL,
+		"items/pkup.wav",
+		"models/objects/fire/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_compass",
+/* pickup */	"compass",
+/* width */		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+	},
+
+/*QUAKED item_sphere_vengeance (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_sphere_vengeance", 
+		Pickup_Sphere,
+		Use_Vengeance,
+		NULL,
+		NULL,
+		"items/pkup.wav",
+		"models/items/vengnce/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_vengeance",
+/* pickup */	"vengeance sphere",
+/* width */		2,
+		60,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+		"spheres/v_idle.wav"		//precache
+	},
+
+/*QUAKED item_sphere_hunter (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_sphere_hunter", 
+		Pickup_Sphere,
+		Use_Hunter,
+		NULL,
+		NULL,
+		"items/pkup.wav",
+		"models/items/hunter/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_hunter",
+/* pickup */	"hunter sphere",
+/* width */		2,
+		120,
+		NULL,
+		IT_POWERUP,
+		0,
+		NULL,
+		0,
+		"spheres/h_idle.wav spheres/h_active.wav spheres/h_lurk.wav"		//precache
+	},
+
+/*QUAKED item_sphere_defender (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_sphere_defender", 
+		Pickup_Sphere,
+		Use_Defender,
+		NULL,
+		NULL,
+		"items/pkup.wav",
+		"models/items/defender/tris.md2", EF_ROTATE,
+		NULL,
+/* icon */		"p_defender",
+/* pickup */	"defender sphere",
+/* width */		2,
+		60,													// respawn time
+		NULL,												// ammo type used
+		IT_POWERUP,											// inventory flags
+		0,
+		NULL,												// info (void *)
+		0,													// tag
+		"models/proj/laser2/tris.md2 models/items/shell/tris.md2 spheres/d_idle.wav"		// precache
+	},
+
+/*QUAKED item_doppleganger (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"item_doppleganger",								// classname
+		Pickup_Doppleganger,								// pickup function
+		Use_Doppleganger,									// use function
+		Drop_General,										// drop function
+		NULL,												// weapon think function
+		"items/pkup.wav",									// pick up sound
+		"models/items/dopple/tris.md2",						// world model
+		EF_ROTATE,											// world model flags
+		NULL,												// view model
+		"p_doppleganger",									// icon
+		"Doppleganger",										// name printed when picked up 
+		0,													// number of digits for statusbar
+		90,													// respawn time
+		NULL,												// ammo type used 
+		IT_POWERUP,											// inventory flags
+		0,
+		NULL,												// info (void *)
+		0,													// tag
+		"models/objects/dopplebase/tris.md2 models/items/spawngro2/tris.md2 models/items/hunter/tris.md2 models/items/vengnce/tris.md2",		// precaches
+	},
+
+	{
+//		"dm_tag_token",										// classname
+		NULL,												// classname
+		Tag_PickupToken,									// pickup function
+		NULL,												// use function
+		NULL,												// drop function
+		NULL,												// weapon think function
+		"items/pkup.wav",									// pick up sound
+		"models/items/tagtoken/tris.md2",					// world model
+		EF_ROTATE | EF_TAGTRAIL,							// world model flags
+		NULL,												// view model
+		"i_tagtoken",										// icon
+		"Tag Token",										// name printed when picked up 
+		0,													// number of digits for statusbar
+		0,													// amount used / contained
+		NULL,												// ammo type used 
+		IT_POWERUP | IT_NOT_GIVEABLE,						// inventory flags
+		0,
+		NULL,												// info (void *)
+		1,													// tag
+		NULL,												// precaches
+	},
+
+// PGM
+// ======================================
+// ======================================
+// PGM
+
+/*QUAKED key_nuke_container (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"key_nuke_container",								// classname
+		Pickup_Key,											// pickup function
+		NULL,												// use function
+		Drop_General,										// drop function
+		NULL,												// weapon think function
+		"items/pkup.wav",									// pick up sound
+		"models/weapons/g_nuke/tris.md2",					// world model
+		EF_ROTATE,											// world model flags
+		NULL,												// view model
+		"i_contain",										// icon
+		"Antimatter Pod",									// name printed when picked up 
+		2,													// number of digits for statusbar
+		0,													// respawn time
+		NULL,												// ammo type used 
+		IT_STAY_COOP|IT_KEY,								// inventory flags
+		0,
+		NULL,												// info (void *)
+		0,													// tag
+		NULL,												// precaches
+	},
+
+/*QUAKED key_nuke (.3 .3 1) (-16 -16 -16) (16 16 16) TRIGGER_SPAWN
+*/
+	{
+		"key_nuke",											// classname
+		Pickup_Key,											// pickup function
+		NULL,												// use function
+		Drop_General,										// drop function
+		NULL,												// weapon think function
+		"items/pkup.wav",									// pick up sound
+		"models/weapons/g_nuke/tris.md2",					// world model
+		EF_ROTATE,											// world model flags
+		NULL,												// view model
+		"i_nuke",											// icon
+		"Antimatter Bomb",									// name printed when picked up 
+		2,													// number of digits for statusbar
+		0,													// respawn time
+		NULL,												// ammo type used 
+		IT_STAY_COOP|IT_KEY,								// inventory flags
+		0,
+		NULL,												// info (void *)
+		0,													// tag
+		NULL,												// precaches
+	},
+
+// PGM
+// ======================================
+#endif //ROGUE
+
 	// end of list marker
 	{NULL}
 };
@@ -2163,6 +3666,24 @@ void SP_item_health_mega (edict_t *self)
 	self->style = HEALTH_IGNORE_MAX|HEALTH_TIMED;
 }
 
+#ifdef XATRIX
+// RAFAEL
+void SP_item_foodcube (edict_t *self)
+{
+	if ( deathmatch->value && ((int)dmflags->value & DF_NO_HEALTH) )
+	{
+		G_FreeEdict (self);
+		return;
+	}
+
+	self->model = "models/objects/trapfx/tris.md2";
+	SpawnItem (self, FindItem ("Health"));
+	self->spawnflags |= DROPPED_ITEM;
+	self->style = HEALTH_IGNORE_MAX;
+	gi.soundindex ("items/s_health.wav");
+	self->classname = "foodcube";
+}
+#endif //XATRIX
 
 void InitItems (void)
 {
@@ -2195,3 +3716,53 @@ void SetItemNames (void)
 	power_screen_index = ITEM_INDEX(FindItem("Power Screen"));
 	power_shield_index = ITEM_INDEX(FindItem("Power Shield"));
 }
+
+#ifdef ROGUE
+//===============
+//ROGUE
+void SP_xatrix_item (edict_t *self)
+{
+	gitem_t	*item;
+	int		i;
+	char	*spawnClass;
+
+	if(!self->classname)
+		return;
+
+	if(!strcmp(self->classname, "ammo_magslug"))
+		spawnClass = "ammo_flechettes";
+	else if(!strcmp(self->classname, "ammo_trap"))
+		spawnClass = "weapon_proxlauncher";
+	else if(!strcmp(self->classname, "item_quadfire"))
+	{
+		float	chance;
+
+		chance = random();
+		if(chance < 0.2)
+			spawnClass = "item_sphere_hunter";
+		else if (chance < 0.6)
+			spawnClass = "item_sphere_vengeance";
+		else
+			spawnClass = "item_sphere_defender";
+	}
+	else if(!strcmp(self->classname, "weapon_boomer"))
+		spawnClass = "weapon_etf_rifle";
+	else if(!strcmp(self->classname, "weapon_phalanx"))
+		spawnClass = "weapon_plasmabeam";
+
+
+	// check item spawn functions
+	for (i=0,item=itemlist ; i<game.num_items ; i++,item++)
+	{
+		if (!item->classname)
+			continue;
+		if (!strcmp(item->classname, spawnClass))
+		{	// found it
+			SpawnItem (self, item);
+			return;
+		}
+	}
+}
+//ROGUE
+//===============
+#endif //ROGUE

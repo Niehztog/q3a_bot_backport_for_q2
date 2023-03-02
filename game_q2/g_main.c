@@ -1,6 +1,15 @@
 
 #include "g_local.h"
 
+#ifdef LOGFILE
+#include "g_log.h"
+#endif //LOGFILE
+
+#ifdef BOT
+#include "bl_main.h"
+#include "bl_spawn.h"
+#endif //BOT
+
 game_locals_t	game;
 level_locals_t	level;
 game_import_t	gi;
@@ -9,7 +18,17 @@ spawn_temp_t	st;
 
 int	sm_meat_index;
 int	snd_fry;
-int meansOfDeath;
+int	meansOfDeath;
+
+#ifdef BOT
+int paused;
+#endif //BOT
+
+#ifdef AQ2
+// zucc for location
+int locOfDeath;
+int stopAP;
+#endif //AQ2
 
 edict_t		*g_edicts;
 
@@ -19,6 +38,10 @@ cvar_t	*dmflags;
 cvar_t	*skill;
 cvar_t	*fraglimit;
 cvar_t	*timelimit;
+#ifdef ZOID
+cvar_t	*capturelimit;
+cvar_t	*botctfteam;
+#endif //ZOID
 cvar_t	*password;
 cvar_t	*spectator_password;
 cvar_t	*needpass;
@@ -52,6 +75,54 @@ cvar_t	*flood_persecond;
 cvar_t	*flood_waitdelay;
 
 cvar_t	*sv_maplist;
+#ifdef ROCKETARENA
+cvar_t	*ra;
+cvar_t	*arena;
+cvar_t	*selfdamage;
+cvar_t	*healthprotect;
+cvar_t	*armorprotect;
+cvar_t	*ra_playercycle;
+cvar_t	*ra_botcycle;
+#endif //ROCKETARENA
+
+#ifdef AQ2
+cvar_t	*aq2;
+cvar_t	*hostname;
+cvar_t	*teamplay;
+cvar_t	*radiolog;
+cvar_t	*motd_time;
+cvar_t	*actionmaps;
+cvar_t	*roundtimelimit;
+cvar_t	*roundlimit;
+cvar_t	*nohud;
+cvar_t	*noscore;
+cvar_t	*actionversion;
+//zucc server variables
+cvar_t	*unique_weapons;
+cvar_t	*unique_items;
+cvar_t	*ir;
+cvar_t	*knifelimit;
+cvar_t	*tgren;
+cvar_t	*allweapon;
+cvar_t	*allitem;
+//zucc from action
+cvar_t	*sv_shelloff;
+cvar_t	*bholelimit;
+cvar_t	*splatlimit;
+#endif //AQ2
+
+#ifdef XATRIX
+cvar_t	*xatrix;			//set when xatrix mission pack 1 is enabled
+#endif //XATRIX
+#ifdef ROGUE
+cvar_t	*rogue;			//set when rogue mission pack 2 is enabled
+cvar_t	*sv_stopspeed;	//PGM	 (this was a define in g_phys.c)
+cvar_t	*g_showlogic;
+cvar_t	*gamerules;
+cvar_t	*huntercam;
+cvar_t	*strong_mines;
+cvar_t	*randomrespawn;
+#endif //ROGUE
 
 void SpawnEntities (char *mapname, char *entities, char *spawnpoint);
 void ClientThink (edict_t *ent, usercmd_t *cmd);
@@ -74,6 +145,12 @@ void G_RunFrame (void);
 
 void ShutdownGame (void)
 {
+#ifdef BOT
+	BotUnloadAllLibraries();
+#endif
+#ifdef LOGFILE
+	Log_ShutDown();
+#endif //LOGFILE
 	gi.dprintf ("==== ShutdownGame ====\n");
 
 	gi.FreeTags (TAG_LEVEL);
@@ -92,6 +169,14 @@ and global variables
 game_export_t *GetGameAPI (game_import_t *import)
 {
 	gi = *import;
+
+#ifdef BOT_IMPORT
+	BotRedirectGameImport();
+#endif //BOT_IMPORT
+
+#ifdef BOT
+	Swap_Init();
+#endif //BOT
 
 	globals.apiversion = GAME_API_VERSION;
 	globals.Init = InitGame;
@@ -293,6 +378,30 @@ void CheckDMRules (void)
 	if (!deathmatch->value)
 		return;
 
+#ifdef ROCKETARENA
+	if (ra->value)
+	{
+		RA2_CheckRules();
+	} //end if
+#endif //ROCKETARENA
+
+
+#ifdef ROGUE
+	if (gamerules && gamerules->value && DMGame.CheckDMRules)
+	{
+		if(DMGame.CheckDMRules())
+			return;
+	}
+#endif //ROGUE
+
+#ifdef AQ2
+	if (aq2->value && teamplay->value)
+	{
+		CheckTeamRules();
+	} //end if
+	else
+#endif //AQ2
+
 	if (timelimit->value)
 	{
 		if (level.time >= timelimit->value*60)
@@ -305,7 +414,16 @@ void CheckDMRules (void)
 
 	if (fraglimit->value)
 	{
-		for (i=0 ; i<maxclients->value ; i++)
+#ifdef ZOID
+		if (ctf->value)
+		{
+			if (CTFCheckRules())
+			{
+				EndDMLevel ();
+			}
+		}
+#endif //ZOID
+		for (i = 0; i < maxclients->value; i++)
 		{
 			cl = game.clients + i;
 			if (!g_edicts[i+1].inuse)
@@ -348,7 +466,22 @@ void ExitLevel (void)
 			continue;
 		if (ent->health > ent->client->pers.max_health)
 			ent->health = ent->client->pers.max_health;
+#ifdef BOT
+		if (deathmatch->value)
+			ent->client->resp.score = ent->client->pers.score = 0;
+#endif //BOT
 	}
+#ifdef ZOID
+	CTFInit();
+#endif //ZOID
+
+#ifdef AQ2
+	if (aq2->value && teamplay->value)
+	{
+		team1_score = 0;
+		team2_score = 0;
+	} //end if
+#endif //AQ2
 
 }
 
@@ -364,6 +497,10 @@ void G_RunFrame (void)
 	int		i;
 	edict_t	*ent;
 
+#ifdef BOT
+	if (paused) return;
+#endif //BOT
+
 	level.framenum++;
 	level.time = level.framenum*FRAMETIME;
 
@@ -378,6 +515,12 @@ void G_RunFrame (void)
 		return;
 	}
 
+#ifdef BOT
+	//
+	AddQueuedBots();
+	//start the bot library frame
+	BotLib_BotStartFrame(level.time);
+#endif //BOT
 	//
 	// treat each object in turn
 	// even the world gets a chance to think
@@ -390,7 +533,11 @@ void G_RunFrame (void)
 
 		level.current_entity = ent;
 
-		VectorCopy (ent->s.origin, ent->s.old_origin);
+#ifdef BOT
+		//used for laser lines
+		if (!(ent->flags & FL_OLDORGNOTSET))
+#endif //BOT
+			VectorCopy (ent->s.origin, ent->s.old_origin);
 
 		// if the ground entity moved, make sure we are still on it
 		if ((ent->groundentity) && (ent->groundentity->linkcount != ent->groundentity_linkcount))
@@ -407,9 +554,50 @@ void G_RunFrame (void)
 			ClientBeginServerFrame (ent);
 			continue;
 		}
-
 		G_RunEntity (ent);
 	}
+
+#ifdef BOT
+	ent = &g_edicts[0];
+	for (i = 0; i < globals.num_edicts; i++, ent++)
+	{
+		if (!ent->inuse) continue;
+		if (!(ent->svflags & SVF_NOCLIENT))
+		{
+			BotLib_BotUpdateEntity(ent);
+		} //end if
+	} //end for
+	//The bot AI and execution of the input is prefered
+	//not to be called between entity, sound and client
+	//updates. This way the bot won't miss any updates.
+	//It won't hurt to call them between the updates,
+	//it's just that the bot might miss updates and
+	//perform less good as a result.
+	//So we just call it after the entities have been updated.
+	//if ((level.framenum & 7) == 7)
+	for (i = 0; i < maxclients->value; i++)
+	{
+		ent = DF_CLIENTENT(i);
+		if (ent->inuse)
+		{
+			if (ent->flags & FL_BOT)
+			{
+				if (BotStarted(ent))
+				{
+					//gi.dprintf("%6d bot AI\n", level.framenum);
+					//update the bot client state
+					BotLib_BotUpdateClient(ent);
+					//activate the bot AI for the current client for one server frame
+					BotLib_BotAI(ent, FRAMETIME);
+					//execute the bot input
+					BotExecuteInput(ent);
+				} //end if
+			} //end if
+		} //end if
+	} //end for
+	//check if a minimum number of players should be in the game
+	CheckMinimumPlayers();
+#endif //BOT
 
 	// see if it is time to end a deathmatch
 	CheckDMRules ();
@@ -419,5 +607,12 @@ void G_RunFrame (void)
 
 	// build the playerstate_t structures for all players
 	ClientEndServerFrames ();
+
+#ifdef CH
+	if (ch->value)
+	{
+		UpdateColoredHitman();
+	} //end if
+#endif //CH
 }
 

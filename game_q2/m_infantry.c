@@ -444,7 +444,11 @@ mframe_t infantry_frames_duck [] =
 };
 mmove_t infantry_move_duck = {FRAME_duck01, FRAME_duck05, infantry_frames_duck, infantry_run};
 
-void infantry_dodge (edict_t *self, edict_t *attacker, float eta)
+void infantry_dodge (edict_t *self, edict_t *attacker, float eta
+#ifdef ROGUE
+							, trace_t *trace
+#endif //ROGUE
+							)
 {
 	if (random() > 0.25)
 		return;

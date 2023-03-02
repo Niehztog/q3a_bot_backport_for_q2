@@ -9,6 +9,11 @@
 #define	SVF_DEADMONSTER			0x00000002	// treat as CONTENTS_DEADMONSTER for collision
 #define	SVF_MONSTER				0x00000004	// treat as CONTENTS_MONSTER for collision
 
+//ROGUE -- added for things that are damageable, but not monsters
+// right now, only the tesla has this
+#define SVF_DAMAGEABLE			0x00000008
+//ROGUE end
+
 // edict->solid values
 
 typedef enum

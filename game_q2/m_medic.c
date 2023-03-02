@@ -472,7 +472,11 @@ mframe_t medic_frames_duck [] =
 };
 mmove_t medic_move_duck = {FRAME_duck1, FRAME_duck16, medic_frames_duck, medic_run};
 
-void medic_dodge (edict_t *self, edict_t *attacker, float eta)
+void medic_dodge (edict_t *self, edict_t *attacker, float eta
+#ifdef ROGUE
+							, trace_t *trace
+#endif //ROGUE
+							)
 {
 	if (random() > 0.25)
 		return;

@@ -1,5 +1,10 @@
+//===================
+// ROGUE
+//===================
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 //===============================
 // BLOCKED Logic
@@ -1992,7 +1997,9 @@ qboolean monster_jump_finished (edict_t *self)
 //		}
 		return true;
 	}
+	//ROGUEBUG: missing return value
+	return false;
 }
 
-
+#endif //ROGUE
 

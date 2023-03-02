@@ -372,6 +372,10 @@ void use_target_spawner (edict_t *self, edict_t *other, edict_t *activator)
 	gi.linkentity (ent);
 	if (self->speed)
 		VectorCopy (self->movedir, ent->velocity);
+
+#ifdef ROGUE
+	ent->s.renderfx |= RF_IR_VISIBLE;		//PGM
+#endif //ROGUE
 }
 
 void SP_target_spawner (edict_t *self)
@@ -473,6 +477,17 @@ When triggered, fires a laser.  You can either set a target
 or a direction.
 */
 
+#ifdef ROGUE
+#define LASER_ON			0x0001
+#define LASER_RED			0x0002
+#define LASER_GREEN			0x0004
+#define LASER_BLUE			0x0008
+#define LASER_YELLOW		0x0010
+#define LASER_ORANGE		0x0020
+#define LASER_FAT			0x0040
+#define LASER_STOPWINDOW	0x0080
+#endif //ROGUE
+
 void target_laser_think (edict_t *self)
 {
 	edict_t	*ignore;
@@ -503,7 +518,12 @@ void target_laser_think (edict_t *self)
 	VectorMA (start, 2048, self->movedir, end);
 	while(1)
 	{
-		tr = gi.trace (start, NULL, NULL, end, ignore, CONTENTS_SOLID|CONTENTS_MONSTER|CONTENTS_DEADMONSTER);
+#ifdef ROGUE
+		if(self->spawnflags & LASER_STOPWINDOW)
+			tr = gi.trace (start, NULL, NULL, end, ignore, MASK_SHOT);
+		else
+#endif //ROGUE
+			tr = gi.trace (start, NULL, NULL, end, ignore, CONTENTS_SOLID|CONTENTS_MONSTER|CONTENTS_DEADMONSTER);
 
 		if (!tr.ent)
 			break;
@@ -513,7 +533,11 @@ void target_laser_think (edict_t *self)
 			T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, MOD_TARGET_LASER);
 
 		// if we hit something that's not a monster or player or is immune to lasers, we're done
-		if (!(tr.ent->svflags & SVF_MONSTER) && (!tr.ent->client))
+		if (!(tr.ent->svflags & SVF_MONSTER) && (!tr.ent->client)
+#ifdef ROGUE
+					&& !(tr.ent->svflags & SVF_DAMAGEABLE)
+#endif //ROGUE
+				)
 		{
 			if (self->spawnflags & 0x80000000)
 			{
@@ -627,6 +651,98 @@ void SP_target_laser (edict_t *self)
 	self->nextthink = level.time + 1;
 }
 
+#ifdef XATRIX
+// RAFAEL 15-APR-98
+/*QUAKED target_mal_laser (1 0 0) (-4 -4 -4) (4 4 4) START_ON RED GREEN BLUE YELLOW ORANGE FAT
+Mal's laser
+*/
+void target_mal_laser_on (edict_t *self)
+{
+	if (!self->activator)
+		self->activator = self;
+	self->spawnflags |= 0x80000001;
+	self->svflags &= ~SVF_NOCLIENT;
+	// target_laser_think (self);
+	self->nextthink = level.time + self->wait + self->delay;
+}
+
+void target_mal_laser_off (edict_t *self)
+{
+	self->spawnflags &= ~1;
+	self->svflags |= SVF_NOCLIENT;
+	self->nextthink = 0;
+}
+
+void target_mal_laser_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	self->activator = activator;
+	if (self->spawnflags & 1)
+		target_mal_laser_off (self);
+	else
+		target_mal_laser_on (self);
+}
+
+void mal_laser_think (edict_t *self)
+{
+	target_laser_think (self);
+	self->nextthink = level.time + self->wait + 0.1;
+	self->spawnflags |= 0x80000000;
+}
+
+void SP_target_mal_laser (edict_t *self)
+{
+	self->movetype = MOVETYPE_NONE;
+	self->solid = SOLID_NOT;
+	self->s.renderfx |= RF_BEAM|RF_TRANSLUCENT;
+	self->s.modelindex = 1;			// must be non-zero
+
+	// set the beam diameter
+	if (self->spawnflags & 64)
+		self->s.frame = 16;
+	else
+		self->s.frame = 4;
+
+	// set the color
+	if (self->spawnflags & 2)
+		self->s.skinnum = 0xf2f2f0f0;
+	else if (self->spawnflags & 4)
+		self->s.skinnum = 0xd0d1d2d3;
+	else if (self->spawnflags & 8)
+		self->s.skinnum = 0xf3f3f1f1;
+	else if (self->spawnflags & 16)
+		self->s.skinnum = 0xdcdddedf;
+	else if (self->spawnflags & 32)
+		self->s.skinnum = 0xe0e1e2e3;
+
+	G_SetMovedir (self->s.angles, self->movedir);
+	
+	if (!self->delay)
+		self->delay = 0.1;
+
+	if (!self->wait)
+		self->wait = 0.1;
+
+	if (!self->dmg)
+		self->dmg = 5;
+
+	VectorSet (self->mins, -8, -8, -8);
+	VectorSet (self->maxs, 8, 8, 8);
+	
+	self->nextthink = level.time + self->delay;
+	self->think = mal_laser_think;
+
+	self->use = target_mal_laser_use;
+
+	gi.linkentity (self);
+
+	if (self->spawnflags & 1)
+		target_mal_laser_on (self);
+	else
+		target_mal_laser_off (self);
+}
+// END	15-APR-98
+#endif //XATRIX
+
 //==========================================================
 
 /*QUAKED target_lightramp (0 .5 .8) (-8 -8 -8) (8 8 8) TOGGLE
@@ -738,11 +854,14 @@ void target_earthquake_think (edict_t *self)
 	int		i;
 	edict_t	*e;
 
-	if (self->last_move_time < level.time)
-	{
-		gi.positioned_sound (self->s.origin, self, CHAN_AUTO, self->noise_index, 1.0, ATTN_NONE, 0);
-		self->last_move_time = level.time + 0.5;
-	}
+#ifdef ROGUE
+	if(!(self->spawnflags & 1))					// PGM
+#endif //ROGUE
+		if (self->last_move_time < level.time)
+		{
+			gi.positioned_sound (self->s.origin, self, CHAN_AUTO, self->noise_index, 1.0, ATTN_NONE, 0);
+			self->last_move_time = level.time + 0.5;
+		}
 
 	for (i=1, e=g_edicts+i; i < globals.num_edicts; i++,e++)
 	{
@@ -786,5 +905,8 @@ void SP_target_earthquake (edict_t *self)
 	self->think = target_earthquake_think;
 	self->use = target_earthquake_use;
 
-	self->noise_index = gi.soundindex ("world/quake.wav");
+#ifdef ROGUE
+	if(!(self->spawnflags & 1))									// PGM
+#endif //ROGUE
+		self->noise_index = gi.soundindex ("world/quake.wav");
 }

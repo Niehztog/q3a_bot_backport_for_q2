@@ -1,6 +1,20 @@
 #include "g_local.h"
 #include "m_player.h"
 
+#ifdef BOT
+#include "bl_cmd.h"
+#include "bl_main.h"
+#include "bl_redirgi.h"
+#endif //BOT
+
+#ifdef OBSERVER
+#include "p_observer.h"
+#endif //OBSERVER
+
+#ifdef CLIENTLAG
+#include "p_lag.h"
+#endif //CLIENTLAG
+
 
 char *ClientTeam (edict_t *ent)
 {
@@ -32,6 +46,21 @@ qboolean OnSameTeam (edict_t *ent1, edict_t *ent2)
 	char	ent1Team [512];
 	char	ent2Team [512];
 
+	//if one of the entities isn't a client
+	if (!ent1->client || !ent2->client) return false;
+#ifdef ZOID
+	if (ctf->value)
+	{
+		return ent1->client->resp.ctf_team == ent2->client->resp.ctf_team;
+	} //end if
+#endif //ZOID
+#ifdef AQ2
+	if (aq2->value && teamplay->value)
+	{
+		return ent1->client->resp.team == ent2->client->resp.team;
+	} //endif
+#endif //AQ2
+
 	if (!((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)))
 		return false;
 
@@ -52,10 +81,19 @@ void SelectNextItem (edict_t *ent, int itflags)
 
 	cl = ent->client;
 
-	if (cl->chase_target) {
+#ifdef ZOID
+	if (ctf->value && cl->menu)
+	{
+		PMenu_Next(ent);
+		return;
+	} //end if
+	else
+#endif //ZOID
+		if (cl->chase_target)
+	{
 		ChaseNext(ent);
 		return;
-	}
+	} //end if
 
 	// scan  for the next valid one
 	for (i=1 ; i<=MAX_ITEMS ; i++)
@@ -84,7 +122,16 @@ void SelectPrevItem (edict_t *ent, int itflags)
 
 	cl = ent->client;
 
-	if (cl->chase_target) {
+#ifdef ZOID
+	if (ctf->value && cl->menu)
+	{
+		PMenu_Prev(ent);
+		return;
+	} //end if
+	else
+#endif //ZOID
+		if (cl->chase_target)
+	{
 		ChasePrev(ent);
 		return;
 	}
@@ -224,6 +271,22 @@ void Cmd_Give_f (edict_t *ent)
 			return;
 	}
 
+#ifdef BOT
+	if (give_all || Q_stricmp(name, "Power Screen") == 0)
+	{
+		it = FindItem("Power Screen");
+		it_ent = G_Spawn();
+		it_ent->classname = it->classname;
+		SpawnItem (it_ent, it);
+		Touch_Item (it_ent, ent, NULL, NULL);
+		if (it_ent->inuse)
+			G_FreeEdict(it_ent);
+
+		if (!give_all)
+			return;
+	}
+#endif //BOT
+
 	if (give_all)
 	{
 		for (i=0 ; i<game.num_items ; i++)
@@ -231,6 +294,10 @@ void Cmd_Give_f (edict_t *ent)
 			it = itemlist + i;
 			if (!it->pickup)
 				continue;
+#ifdef ROGUE
+			if (it->flags & IT_NOT_GIVEABLE)					// ROGUE
+				continue;										// ROGUE
+#endif //ROGUE
 			if (it->flags & (IT_ARMOR|IT_WEAPON|IT_AMMO))
 				continue;
 			ent->client->pers.inventory[i] = 1;
@@ -256,6 +323,14 @@ void Cmd_Give_f (edict_t *ent)
 		return;
 	}
 
+#ifdef ROGUE
+	if (it->flags & IT_NOT_GIVEABLE)		
+	{
+		gi.dprintf ("item cannot be given\n");
+		return;							
+	}
+#endif //ROGUE
+
 	index = ITEM_INDEX(it);
 
 	if (it->flags & IT_AMMO)
@@ -270,6 +345,12 @@ void Cmd_Give_f (edict_t *ent)
 		it_ent = G_Spawn();
 		it_ent->classname = it->classname;
 		SpawnItem (it_ent, it);
+#ifdef ROGUE
+		// PMM - since some items don't actually spawn when you say to ..
+		if (!it_ent->inuse)
+			return;
+		// pmm
+#endif //ROGUE
 		Touch_Item (it_ent, ent, NULL, NULL);
 		if (it_ent->inuse)
 			G_FreeEdict(it_ent);
@@ -381,8 +462,33 @@ void Cmd_Use_f (edict_t *ent)
 	char		*s;
 
 	s = gi.args();
+#ifdef AQ2
+	if (aq2->value)
+	{
+		//zucc - check for "special"
+		if ( stricmp(s, "special") == 0 )
+		{
+			ReadySpecialWeapon( ent );
+			return;
+		} //end if
+		//zucc - alias names
+		if (!stricmp(s, "blaster") || !stricmp(s, "mark 23 pistol")) s = MK23_NAME;
+		if (!stricmp(s, "A 2nd pistol") || !stricmp(s, "railgun")) s = DUAL_NAME;
+		if (!stricmp(s, "shotgun")) s = M3_NAME;
+		if (!stricmp(s, "machinegun")) s = HC_NAME;
+		if (!stricmp(s, "super shotgun")) s = MP5_NAME;
+		if (!stricmp(s, "chaingun")) s = SNIPER_NAME;
+		if (!stricmp(s, "bfg10k")) s = KNIFE_NAME;
+		if (!stricmp(s, "grenade launcher")) s = M4_NAME;
+		if (!stricmp(s, "grenades")) s = GRENADE_NAME;
+	} //end if
+#endif //AQ2
 	it = FindItem (s);
-	if (!it)
+	if (!it
+#ifdef AQ2
+		|| (aq2->value && ent->solid == SOLID_NOT && ent->deadflag != DEAD_DEAD)
+#endif //AQ2
+		)
 	{
 		gi.cprintf (ent, PRINT_HIGH, "unknown item: %s\n", s);
 		return;
@@ -395,8 +501,45 @@ void Cmd_Use_f (edict_t *ent)
 	index = ITEM_INDEX(it);
 	if (!ent->client->pers.inventory[index])
 	{
-		gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
-		return;
+#ifdef XATRIX
+		// RAFAEL
+		if (strcmp (it->pickup_name, "HyperBlaster") == 0)
+		{
+			it = FindItem ("Ionripper");
+			if (!it)
+			{
+				gi.cprintf (ent, PRINT_HIGH, "unknown item: Ionripper\n");
+				return;
+			}
+			index = ITEM_INDEX (it);
+			if (!ent->client->pers.inventory[index])
+			{
+				gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+				return;
+			}
+		}
+		// RAFAEL
+		else if (strcmp (it->pickup_name, "Railgun") == 0)
+		{
+			it = FindItem ("Phalanx");
+			if (!it)
+			{
+				gi.cprintf (ent, PRINT_HIGH, "unknown item: Phalanx");
+				return;
+			}
+			index = ITEM_INDEX (it);
+			if (!ent->client->pers.inventory[index])
+			{
+				gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+				return;
+			}
+		}
+		else
+#endif //XATRIX
+		{
+			gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+			return;
+		}
 	}
 
 	it->use (ent, it);
@@ -416,6 +559,17 @@ void Cmd_Drop_f (edict_t *ent)
 	gitem_t		*it;
 	char		*s;
 
+#ifdef ZOID //--special case for tech powerups
+	if (ctf->value)
+	{
+		if (Q_stricmp(gi.args(), "tech") == 0 && (it = CTFWhat_Tech(ent)) != NULL)
+		{
+			it->drop (ent, it);
+			return;
+		} //end if
+	} //end if
+#endif //ZOID
+
 	s = gi.args();
 	it = FindItem (s);
 	if (!it)
@@ -431,8 +585,35 @@ void Cmd_Drop_f (edict_t *ent)
 	index = ITEM_INDEX(it);
 	if (!ent->client->pers.inventory[index])
 	{
-		gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
-		return;
+#ifdef XATRIX
+		// RAFAEL
+		if (strcmp (it->pickup_name, "HyperBlaster") == 0)
+		{
+			it = FindItem ("Ionripper");
+			index = ITEM_INDEX (it);
+			if (!ent->client->pers.inventory[index])
+			{
+				gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+				return;
+			}
+		}
+		// RAFAEL
+		else if (strcmp (it->pickup_name, "Railgun") == 0)
+		{
+			it = FindItem ("Phalanx");
+			index = ITEM_INDEX (it);
+			if (!ent->client->pers.inventory[index])
+			{
+				gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+				return;
+			}
+		}
+		else
+#endif //XATRIX
+		{
+			gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", s);
+			return;
+		}
 	}
 
 	it->drop (ent, it);
@@ -454,11 +635,40 @@ void Cmd_Inven_f (edict_t *ent)
 	cl->showscores = false;
 	cl->showhelp = false;
 
+#ifdef ZOID
+	if (ctf->value)
+	{
+		if (ent->client->menu)
+		{
+			PMenu_Close(ent);
+			ent->client->update_chase = true;
+			return;
+		}
+	} //end if
+#endif //ZOID
+#ifdef BOT
+	if (ent->client->showmenu)
+	{
+		ent->client->menustate.showmenu = false;
+		ent->client->showmenu = false;
+		ent->client->menustate.redrawmenu = false;
+		ent->client->menustate.removemenu = true;
+	} //end if
+#endif //BOT
+
 	if (cl->showinventory)
 	{
 		cl->showinventory = false;
 		return;
 	}
+
+#ifdef ZOID
+	if (ctf->value && cl->resp.ctf_team == CTF_NOTEAM)
+	{
+		CTFOpenJoinMenu(ent);
+		return;
+	} //end if
+#endif //ZOID
 
 	cl->showinventory = true;
 
@@ -479,6 +689,17 @@ void Cmd_InvUse_f (edict_t *ent)
 {
 	gitem_t		*it;
 
+#ifdef ZOID
+	if (ctf->value)
+	{
+		if (ent->client->menu)
+		{
+			PMenu_Select(ent);
+			return;
+		}
+	} //end if
+#endif //ZOID
+
 	ValidateSelectedItem (ent);
 
 	if (ent->client->pers.selected_item == -1)
@@ -495,6 +716,25 @@ void Cmd_InvUse_f (edict_t *ent)
 	}
 	it->use (ent, it);
 }
+
+#ifdef ZOID
+/*
+=================
+Cmd_LastWeap_f
+=================
+*/
+void Cmd_LastWeap_f (edict_t *ent)
+{
+	gclient_t	*cl;
+
+	cl = ent->client;
+
+	if (!cl->pers.weapon || !cl->pers.lastweapon)
+		return;
+
+	cl->pers.lastweapon->use (ent, cl->pers.lastweapon);
+}
+#endif //ZOID
 
 /*
 =================
@@ -518,7 +758,12 @@ void Cmd_WeapPrev_f (edict_t *ent)
 	// scan  for the next valid one
 	for (i=1 ; i<=MAX_ITEMS ; i++)
 	{
+#ifdef ROGUE
+		// PMM - prevent scrolling through ALL weapons
+		index = (selected_weapon + MAX_ITEMS - i)%MAX_ITEMS;
+#else //ROGUE
 		index = (selected_weapon + i)%MAX_ITEMS;
+#endif //ROGUE
 		if (!cl->pers.inventory[index])
 			continue;
 		it = &itemlist[index];
@@ -527,8 +772,14 @@ void Cmd_WeapPrev_f (edict_t *ent)
 		if (! (it->flags & IT_WEAPON) )
 			continue;
 		it->use (ent, it);
+#ifdef ROGUE
+		// PMM - prevent scrolling through ALL weapons
+		if (cl->newweapon == it)
+			return;
+#else //ROGUE
 		if (cl->pers.weapon == it)
 			return;	// successful
+#endif //ROGUE
 	}
 }
 
@@ -554,7 +805,12 @@ void Cmd_WeapNext_f (edict_t *ent)
 	// scan  for the next valid one
 	for (i=1 ; i<=MAX_ITEMS ; i++)
 	{
+#ifdef ROGUE
+		// PMM - prevent scrolling through ALL weapons
+		index = (selected_weapon + i)%MAX_ITEMS;
+#else //ROGUE
 		index = (selected_weapon + MAX_ITEMS - i)%MAX_ITEMS;
+#endif //ROGUE
 		if (!cl->pers.inventory[index])
 			continue;
 		it = &itemlist[index];
@@ -563,8 +819,14 @@ void Cmd_WeapNext_f (edict_t *ent)
 		if (! (it->flags & IT_WEAPON) )
 			continue;
 		it->use (ent, it);
+#ifdef ROGUE
+		// PMM - prevent scrolling through ALL weapons
+		if (cl->newweapon == it)
+			return;
+#else
 		if (cl->pers.weapon == it)
 			return;	// successful
+#endif //ROGUE
 	}
 }
 
@@ -628,11 +890,28 @@ Cmd_Kill_f
 */
 void Cmd_Kill_f (edict_t *ent)
 {
+
+#ifdef ZOID //for the observer mode
+	if (ent->solid == SOLID_NOT)
+		return;
+#endif //ZOID
+
 	if((level.time - ent->client->respawn_time) < 5)
 		return;
 	ent->flags &= ~FL_GODMODE;
 	ent->health = 0;
 	meansOfDeath = MOD_SUICIDE;
+#ifdef ROGUE
+	// make sure no trackers are still hurting us.
+	if(ent->client->tracker_pain_framenum)
+		RemoveAttackingPainDaemons (ent);
+
+	if (ent->client->owned_sphere)
+	{
+		G_FreeEdict(ent->client->owned_sphere);
+		ent->client->owned_sphere = NULL;
+	}
+#endif //ROGUE
 	player_die (ent, ent, ent, 100000, vec3_origin);
 }
 
@@ -646,6 +925,22 @@ void Cmd_PutAway_f (edict_t *ent)
 	ent->client->showscores = false;
 	ent->client->showhelp = false;
 	ent->client->showinventory = false;
+#ifdef ZOID
+	if (ctf->value)
+	{
+		if (ent->client->menu) PMenu_Close(ent);
+		ent->client->update_chase = true;
+	} //end if
+#endif //ZOID
+#ifdef BOT
+	if (ent->client->showmenu)
+	{
+		ent->client->menustate.showmenu = false;
+		ent->client->showmenu = false;
+		ent->client->menustate.redrawmenu = false;
+		ent->client->menustate.removemenu = true;
+	} //end if
+#endif //BOT
 }
 
 
@@ -675,8 +970,8 @@ void Cmd_Players_f (edict_t *ent)
 {
 	int		i;
 	int		count;
-	char	small[64];
-	char	large[1280];
+	char		dsmall[64];
+	char		large[1280];
 	int		index[256];
 
 	count = 0;
@@ -695,15 +990,15 @@ void Cmd_Players_f (edict_t *ent)
 
 	for (i = 0 ; i < count ; i++)
 	{
-		Com_sprintf (small, sizeof(small), "%3i %s\n",
+		Com_sprintf (dsmall, sizeof(dsmall), "%3i %s\n",
 			game.clients[index[i]].ps.stats[STAT_FRAGS],
 			game.clients[index[i]].pers.netname);
-		if (strlen (small) + strlen(large) > sizeof(large) - 100 )
+		if (strlen (dsmall) + strlen(large) > sizeof(large) - 100 )
 		{	// can't print all of them in one packet
 			strcat (large, "...\n");
 			break;
 		}
-		strcat (large, small);
+		strcat (large, dsmall);
 	}
 
 	gi.cprintf (ent, PRINT_HIGH, "%s\n%i players\n", large, count);
@@ -771,14 +1066,40 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 	edict_t	*other;
 	char	*p;
 	char	text[2048];
+	char	outtext[2048];
 	gclient_t *cl;
 
 	if (gi.argc () < 2 && !arg0)
 		return;
 
-	if (!((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)))
+#ifdef AQ2
+	if (aq2->value && !teamplay->value)
+#endif //AQ2
+	if (!((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS))
+#ifdef ZOID
+		&& !ctf->value
+#endif //ZOID
+		)
 		team = false;
 
+#ifdef AQ2
+	if (aq2->value)
+	{
+		if (team)
+			Com_sprintf (text, sizeof(text), "%s(%s): ", 
+				(teamplay->value && ent->solid == SOLID_NOT) ? "[DEAD] " : "",
+				ent->client->pers.netname);
+		else if (partner_msg)
+			Com_sprintf (text, sizeof(text), "[%sPARTNER] %s: ", 
+				(ent->solid == SOLID_NOT) ? "DEAD " : "",
+				ent->client->pers.netname);
+		else
+			Com_sprintf (text, sizeof(text), "%s%s: ", 
+				(teamplay->value && ent->solid == SOLID_NOT) ? "[DEAD] " : "",
+				ent->client->pers.netname);
+	} //end if
+	else
+#endif //AQ2
 	if (team)
 		Com_sprintf (text, sizeof(text), "(%s): ", ent->client->pers.netname);
 	else
@@ -802,9 +1123,31 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 		strcat(text, p);
 	}
 
-	// don't let text be too long for malicious reasons
-	if (strlen(text) > 150)
-		text[150] = 0;
+#ifdef AQ2
+	if (aq2->value)
+	{
+		// don't let text be too long for malicious reasons
+		// ...doubled this limit for Axshun -FB
+		if (strlen(text) > 300)
+			text[300] = 0;
+		if (ent->solid != SOLID_NOT && ent->deadflag != DEAD_DEAD)
+			ParseSayText(ent, text); // this will parse the % variables, and again check 300 limit afterwards -FB
+	} //end if
+	else
+#endif //AQ2
+	{
+		// don't let text be too long for malicious reasons
+		if (strlen(text) > 150)
+			text[150] = 0;
+
+#ifdef ZOID
+		if (team)
+		{
+			CTFSay_Team(ent, text, outtext);
+			strcpy(text, outtext);
+		} //end if
+	} //end else
+#endif //CTF
 
 	strcat(text, "\n");
 
@@ -843,12 +1186,50 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 			continue;
 		if (team)
 		{
+#ifdef OBSERVER
+			if (!(ent->flags & FL_OBSERVER) && (other->flags & FL_OBSERVER)) continue;
+			else if ((ent->flags & FL_OBSERVER) && !(other->flags & FL_OBSERVER)) continue;
+			else if (!((ent->flags & FL_OBSERVER) && (other->flags & FL_OBSERVER)))
+#endif //OBSERVER
 			if (!OnSameTeam(ent, other))
 				continue;
 		}
+#ifdef AQ2
+		if (aq2->value)
+		{
+			if (partner_msg)
+			{
+				if (other != ent->client->resp.radio_partner && other != ent)
+					continue;
+			}
+			if (teamplay->value && team_round_going)
+			{
+				if (ent->solid == SOLID_NOT && other->solid != SOLID_NOT)
+					continue;
+			}
+		} //end if
+#endif //AQ2
 		gi.cprintf(other, PRINT_CHAT, "%s", text);
 	}
 }
+
+#ifdef ROGUE
+void Cmd_Ent_Count_f (edict_t *ent)
+{
+	int		x;
+	edict_t	*e;
+
+	x=0;
+
+	for (e=g_edicts;e < &g_edicts[globals.num_edicts] ; e++)
+	{
+		if(e->inuse)
+			x++;
+	}
+
+	gi.dprintf("%d entites active\n", x);
+}
+#endif //ROGUE
 
 void Cmd_PlayerList_f(edict_t *ent)
 {
@@ -939,9 +1320,19 @@ void ClientCommand (edict_t *ent)
 	else if (Q_stricmp (cmd, "inven") == 0)
 		Cmd_Inven_f (ent);
 	else if (Q_stricmp (cmd, "invnext") == 0)
-		SelectNextItem (ent, -1);
+	{
+#ifdef BOT
+		if (!MenuDown(ent))
+#endif //BOT
+			SelectNextItem (ent, -1);
+	} //end else if
 	else if (Q_stricmp (cmd, "invprev") == 0)
-		SelectPrevItem (ent, -1);
+	{
+#ifdef BOT
+		if (!MenuUp(ent))
+#endif //BOT
+			SelectPrevItem (ent, -1);
+	} //end else if
 	else if (Q_stricmp (cmd, "invnextw") == 0)
 		SelectNextItem (ent, IT_WEAPON);
 	else if (Q_stricmp (cmd, "invprevw") == 0)
@@ -951,7 +1342,12 @@ void ClientCommand (edict_t *ent)
 	else if (Q_stricmp (cmd, "invprevp") == 0)
 		SelectPrevItem (ent, IT_POWERUP);
 	else if (Q_stricmp (cmd, "invuse") == 0)
-		Cmd_InvUse_f (ent);
+	{
+#ifdef BOT
+		if (!MenuForward(ent))
+#endif //BOT
+				Cmd_InvUse_f(ent);
+	}
 	else if (Q_stricmp (cmd, "invdrop") == 0)
 		Cmd_InvDrop_f (ent);
 	else if (Q_stricmp (cmd, "weapprev") == 0)
@@ -968,6 +1364,116 @@ void ClientCommand (edict_t *ent)
 		Cmd_Wave_f (ent);
 	else if (Q_stricmp(cmd, "playerlist") == 0)
 		Cmd_PlayerList_f(ent);
-	else	// anything that doesn't match a command will be a chat
-		Cmd_Say_f (ent, false, true);
+#ifdef CLIENTLAG
+	else if (Q_stricmp(cmd, "lag") == 0)
+		Lag_SetClientLag(ent, atoi(gi.argv(1)));
+	else if (Q_stricmp(cmd, "lagvariance") == 0)
+		Lag_SetClientLagVariance(ent, atoi(gi.argv(1)));
+#endif //CLIENTLAG
+#ifdef AQ2
+	else if (aq2->value && Q_stricmp (cmd, "reload") == 0)
+		Cmd_Reload_f(ent);
+	else if (aq2->value && Q_stricmp (cmd, "weapon") == 0)
+		Cmd_Weapon_f(ent);
+	else if (aq2->value && Q_stricmp (cmd, "opendoor") == 0)
+		Cmd_OpenDoor_f(ent);
+	else if (aq2->value && Q_stricmp (cmd, "bandage") == 0)
+		Cmd_Bandage_f(ent);
+	else if (aq2->value && Q_stricmp (cmd, "id") == 0)
+		Cmd_ID_f (ent);
+	else if (aq2->value && Q_stricmp (cmd, "irvision") == 0)
+		Cmd_IR_f (ent);
+	else if (aq2->value && Q_stricmp(cmd, "team") == 0 && teamplay->value)
+		Team_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "radio") == 0)
+		Cmd_Radio_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "radiogender") == 0)
+		Cmd_Radiogender_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "radio_power") == 0)
+		Cmd_Radio_power_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "radiopartner") == 0)
+		Cmd_Radiopartner_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "radioteam") == 0)
+		Cmd_Radioteam_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "channel") == 0)
+		Cmd_Channel_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "say_partner") == 0)
+		Cmd_Say_partner_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "partner") == 0)
+		Cmd_Partner_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "unpartner") == 0)
+		Cmd_Unpartner_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "motd") == 0)
+		PrintMOTD(ent);
+	else if (aq2->value && Q_stricmp(cmd, "deny") == 0)
+		Cmd_Deny_f(ent);
+	else if (aq2->value && Q_stricmp(cmd, "choose") == 0)
+		Cmd_Choose_f(ent);
+#endif //AQ2
+#ifdef ROGUE
+	else if (Q_stricmp (cmd, "entcount") == 0)		// PGM
+		Cmd_Ent_Count_f (ent);						// PGM
+	else if (Q_stricmp (cmd, "disguise") == 0)		// PGM
+	{
+		ent->flags |= FL_DISGUISED;
+	}
+#endif //ROGUE
+#ifdef ROCKETARENA
+	else if (Q_stricmp (cmd, "toarena") == 0)
+		Cmd_toarena_f(ent, atoi(gi.argv(1)));
+	else if (Q_stricmp (cmd, "mstart") == 0)
+		Cmd_start_match_f(ent, ent->client->resp.context);
+	else if (Q_stricmp (cmd, "mstop") == 0)
+		Cmd_stop_match_f(ent, ent->client->resp.context, 0);
+#endif //ROCKETARENA
+#ifdef OBSERVER
+	else if (ClientObserverCmd(cmd, ent))
+	{
+	} //end else if
+#endif //OBSERVER
+
+#ifdef BOT
+	//bot commands
+	else if (BotCmd(cmd, ent, false))
+	{
+	} //end else if
+#endif //BOT
+
+#ifdef ZOID
+	else if (ctf->value && Q_stricmp(cmd, "team") == 0)
+	{
+		CTFTeam_f(ent);
+	} //end else if
+	else if (ctf->value && Q_stricmp(cmd, "id") == 0)
+	{
+		CTFID_f(ent);
+	} //end else if
+#endif //ZOID
+#ifdef CTF_HOOK
+	else if (ctf->value && Q_stricmp(cmd, "hookon") == 0)
+	{
+		ent->client->ctf_hookstate = CTF_HOOK_STATE_ON;
+	} //end else if
+	else if (ctf->value && Q_stricmp(cmd, "hookoff") == 0)
+	{
+		if (ent->client->ctf_hookstate & CTF_HOOK_STATE_ON)
+				ent->client->ctf_hookstate |= CTF_HOOK_STATE_TURNOFF;
+	} //end else if
+#endif //CTF_HOOK
+	else
+	{
+#ifdef BOT
+		//assume team message if in a teamplay game
+		if (((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)) || ctf->value)
+		{
+			Cmd_Say_f(ent, true, true);
+		} //end if
+		else
+#endif //BOT
+			// anything that doesn't match a command will be a chat
+			Cmd_Say_f(ent, false, true);
+	} //end else
+#ifdef BOT
+	BotClearCommandArguments();
+#endif //BOT
 }

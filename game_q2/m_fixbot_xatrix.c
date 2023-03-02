@@ -4,7 +4,10 @@
 
 
 #include "g_local.h"
-#include "m_fixbot.h"
+
+#ifdef XATRIX
+
+#include "m_fixbot_xatrix.h"
 
 
 #define MZ2_fixbot_BLASTER_1				MZ2_HOVER_BLASTER_1
@@ -1326,3 +1329,4 @@ void SP_monster_fixbot (edict_t *self)
 }
 
 
+#endif //XATRIX

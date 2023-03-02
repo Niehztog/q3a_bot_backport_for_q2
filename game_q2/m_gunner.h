@@ -212,4 +212,17 @@
 #define FRAME_duck07          	207
 #define FRAME_duck08          	208
 
+#ifdef ROGUE
+#define FRAME_jump01			209
+#define FRAME_jump02			210
+#define FRAME_jump03			211
+#define FRAME_jump04			212
+#define FRAME_jump05			213
+#define FRAME_jump06			214
+#define FRAME_jump07			215
+#define FRAME_jump08			216
+#define FRAME_jump09			217
+#define FRAME_jump10			218
+#endif //ROGUE
+
 #define MODEL_SCALE		1.150000

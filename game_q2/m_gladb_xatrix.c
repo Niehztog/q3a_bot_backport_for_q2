@@ -8,6 +8,9 @@
 */
 
 #include "g_local.h"
+
+#ifdef XATRIX
+
 #include "m_gladiator.h"
 
 
@@ -378,3 +381,4 @@ void SP_monster_gladb (edict_t *self)
 	walkmonster_start (self);
 }
 
+#endif //XATRIX

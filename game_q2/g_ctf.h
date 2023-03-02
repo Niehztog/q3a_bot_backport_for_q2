@@ -33,14 +33,21 @@ typedef enum {
 	CTF_GRAPPLE_STATE_HANG
 } ctfgrapplestate_t;
 
+//HOOK
+#define CTF_HOOK_STATE_ON					1
+#define CTF_HOOK_STATE_TURNOFF			2
+#define CTF_HOOK_STATE_FIRED				4
+//HOOK
+
 extern cvar_t *ctf;
+extern cvar_t *botctfteam;
 
 #define CTF_TEAM1_SKIN "ctf_r"
 #define CTF_TEAM2_SKIN "ctf_b"
 
-#define DF_CTF_FORCEJOIN	131072	
-#define DF_ARMOR_PROTECT	262144
-#define DF_CTF_NO_TECH      524288
+#define DF_CTF_FORCEJOIN		131072	
+#define DF_ARMOR_PROTECT		262144
+#define DF_CTF_NO_TECH			524288
 
 #define CTF_CAPTURE_BONUS		15	// what you get for capture
 #define CTF_TEAM_BONUS			10	// what your team gets for capture
@@ -78,6 +85,7 @@ char *CTFTeamName(int team);
 char *CTFOtherTeamName(int team);
 void CTFAssignSkin(edict_t *ent, char *s);
 void CTFAssignTeam(gclient_t *who);
+void CTFForceAssignTeam(gclient_t *who);
 edict_t *SelectCTFSpawnPoint (edict_t *ent);
 qboolean CTFPickup_Flag(edict_t *ent, edict_t *other);
 qboolean CTFDrop_Flag(edict_t *ent, gitem_t *item);
@@ -88,7 +96,7 @@ void CTFDeadDropFlag(edict_t *self);
 void CTFScoreboardMessage (edict_t *ent, edict_t *killer);
 void CTFTeam_f (edict_t *ent);
 void CTFID_f (edict_t *ent);
-void CTFSay_Team(edict_t *who, char *msg);
+void CTFSay_Team(edict_t *who, char *msg, char *outmsg);
 void CTFFlagSetup (edict_t *ent);
 void CTFResetFlag(int ctf_team);
 void CTFFragBonuses(edict_t *targ, edict_t *inflictor, edict_t *attacker);

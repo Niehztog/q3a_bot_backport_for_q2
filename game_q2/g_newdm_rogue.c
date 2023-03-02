@@ -1,8 +1,15 @@
+//===================
+// ROGUE
+//===================
+
 // g_newdm.c
 // pmack
 // june 1998
 
 #include "g_local.h"
+
+#ifdef ROGUE
+
 #include "m_player.h"
 
 dm_game_rt	DMGame;
@@ -382,3 +389,4 @@ void fire_doppleganger (edict_t *ent, vec3_t start, vec3_t aimdir)
 	body->teammaster = base;
 }
 
+#endif //ROGUE

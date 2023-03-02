@@ -4,7 +4,10 @@
 */
 
 #include "g_local.h"
-#include "m_gekk.h"
+
+#ifdef XATRIX
+
+#include "m_gekk_xatrix.h"
 
 static int	sound_swing;
 static int	sound_hit;
@@ -349,7 +352,7 @@ mmove_t gekk_move_swim_start = {FRAME_swim_01, FRAME_swim_32, gekk_frames_swim_s
 void gekk_swim (edict_t *self)
 {
 	
-	if (gekk_checkattack)
+	if (gekk_checkattack(self))	//XATRIXBUG: missing parameter list
 		if (!self->enemy->waterlevel && random() > 0.7)
 			water_to_land (self);
 	else
@@ -1397,7 +1400,11 @@ mframe_t gekk_frames_rduck[] =
 mmove_t gekk_move_rduck = {FRAME_rduck_01, FRAME_rduck_13, gekk_frames_rduck, gekk_run_start};
 
 
-void gekk_dodge (edict_t *self, edict_t *attacker, float eta)
+void gekk_dodge (edict_t *self, edict_t *attacker, float eta
+#ifdef ROGUE
+					  , trace_t *trace
+#endif //ROGUE
+					  )
 {
 	float	r;
 
@@ -1578,3 +1585,5 @@ void land_to_water (edict_t *self)
 	VectorSet (self->mins, -24, -24, -24);
 	VectorSet (self->maxs, 24, 24, 16);
 }
+
+#endif //XATRIX

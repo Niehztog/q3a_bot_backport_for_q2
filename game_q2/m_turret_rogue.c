@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 /*
 ==============================================================================
 
@@ -7,7 +11,10 @@ TURRET
 */
 
 #include "g_local.h"
-#include "m_turret.h"
+
+#ifdef ROGUE
+
+#include "m_turret_rogue.h"
 
 #define SPAWN_BLASTER			0x0008
 #define SPAWN_MACHINEGUN		0x0010
@@ -1036,3 +1043,5 @@ void SP_monster_turret (edict_t *self)
 	if(self->spawnflags & (SPAWN_ROCKET|SPAWN_BLASTER))
 		self->monsterinfo.blindfire = true;
 }
+
+#endif //ROGUE

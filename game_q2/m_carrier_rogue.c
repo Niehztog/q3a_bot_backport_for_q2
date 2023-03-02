@@ -1,3 +1,7 @@
+//===================
+// ROGUE
+//===================
+
 /*
 ==============================================================================
 
@@ -10,7 +14,10 @@ carrier
 // self->wait used to prevent rapid refire of rocket launcher
 
 #include "g_local.h"
-#include "m_carrier.h"
+
+#ifdef ROGUE
+
+#include "m_carrier_rogue.h"
 
 #define	CARRIER_ROCKET_TIME		2		// number of seconds between rocket shots
 #define CARRIER_ROCKET_SPEED	750
@@ -1303,3 +1310,4 @@ void SP_monster_carrier (edict_t *self)
 	}
 }
 
+#endif //ROGUE

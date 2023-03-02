@@ -1,8 +1,15 @@
+
+//===================
+// ROGUE
+//===================
+
 // dm_ball.c
 // pmack
 // june 98
 
 #include "g_local.h"
+
+#ifdef ROGUE
 
 // defines
 
@@ -676,3 +683,6 @@ void SP_dm_dball_goal (edict_t *self)
 	gi.linkentity (self);
 
 }
+
+#endif //ROGUE
+

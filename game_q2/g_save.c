@@ -1,6 +1,10 @@
 
 #include "g_local.h"
 
+#ifdef BOT
+#include "bl_main.h"
+#endif //BOT
+
 #define Function(f) {#f, f}
 
 mmove_t mmove_reloc;
@@ -38,6 +42,9 @@ field_t fields[] = {
 	{"origin", FOFS(s.origin), F_VECTOR},
 	{"angles", FOFS(s.angles), F_VECTOR},
 	{"angle", FOFS(s.angles), F_ANGLEHACK},
+#ifdef ROCKETARENA
+	{"arena", FOFS(arena),F_INT},
+#endif //ROCKETARENA
 
 	{"goalentity", FOFS(goalentity), F_EDICT, FFL_NOSPAWN},
 	{"movetarget", FOFS(movetarget), F_EDICT, FFL_NOSPAWN},
@@ -95,6 +102,32 @@ field_t fields[] = {
 	{"minpitch", STOFS(minpitch), F_FLOAT, FFL_SPAWNTEMP},
 	{"maxpitch", STOFS(maxpitch), F_FLOAT, FFL_SPAWNTEMP},
 	{"nextmap", STOFS(nextmap), F_LSTRING, FFL_SPAWNTEMP},
+#ifdef BOT
+	{"name", STOFS(name), F_LSTRING, FFL_SPAWNTEMP},
+	{"skin", STOFS(skin), F_LSTRING, FFL_SPAWNTEMP},
+	{"charfile", STOFS(charfile), F_LSTRING, FFL_SPAWNTEMP},
+	{"charname", STOFS(charname), F_LSTRING, FFL_SPAWNTEMP},
+#endif //BOT
+
+#ifdef ROGUE
+	// ROGUE
+	{"bad_area", FOFS(bad_area), F_EDICT},
+	// while the hint_path stuff could be reassembled on the fly, no reason to be different
+	{"hint_chain", FOFS(hint_chain), F_EDICT},
+	{"monster_hint_chain", FOFS(monster_hint_chain), F_EDICT},
+	{"target_hint_chain", FOFS(target_hint_chain), F_EDICT},
+	//
+	{"goal_hint", FOFS(monsterinfo.goal_hint), F_EDICT},
+	{"badMedic1", FOFS(monsterinfo.badMedic1), F_EDICT},
+	{"badMedic2", FOFS(monsterinfo.badMedic2), F_EDICT},
+	{"last_player_enemy", FOFS(monsterinfo.last_player_enemy), F_EDICT},
+	{"commander", FOFS(monsterinfo.commander), F_EDICT},
+	{"blocked", FOFS(monsterinfo.blocked), F_MMOVE, FFL_NOSPAWN},
+	{"duck", FOFS(monsterinfo.duck), F_MMOVE, FFL_NOSPAWN},
+	{"unduck", FOFS(monsterinfo.unduck), F_MMOVE, FFL_NOSPAWN},
+	{"sidestep", FOFS(monsterinfo.sidestep), F_MMOVE, FFL_NOSPAWN},
+	// ROGUE	
+#endif //ROGUE
 
 	{0, 0, 0, 0}
 
@@ -109,6 +142,10 @@ field_t		levelfields[] =
 	{"sound_entity", LLOFS(sound_entity), F_EDICT},
 	{"sound2_entity", LLOFS(sound2_entity), F_EDICT},
 
+#ifdef ROGUE
+	{"disguise_violator", LLOFS(disguise_violator), F_EDICT},
+#endif //ROGUE
+
 	{NULL, 0, F_INT}
 };
 
@@ -118,6 +155,9 @@ field_t		clientfields[] =
 	{"pers.lastweapon", CLOFS(pers.lastweapon), F_ITEM},
 	{"newweapon", CLOFS(newweapon), F_ITEM},
 
+#ifdef ROGUE
+	{"owned_sphere", CLOFS(owned_sphere), F_EDICT},
+#endif //ROGUE
 	{NULL, 0, F_INT}
 };
 
@@ -132,6 +172,15 @@ is loaded.
 */
 void InitGame (void)
 {
+
+#ifdef BOT
+	gi.dprintf("\n=====================================\n");
+	gi.dprintf(" This game library contains the bot\n");
+	gi.dprintf("    library interface developed\n");
+	gi.dprintf("           by Mr Elusive.\n");
+	gi.dprintf("=====================================\n\n");
+#endif //BOT
+
 	gi.dprintf ("==== InitGame ====\n");
 
 	gun_x = gi.cvar ("gun_x", "0", 0);
@@ -143,6 +192,18 @@ void InitGame (void)
 	sv_rollangle = gi.cvar ("sv_rollangle", "2", 0);
 	sv_maxvelocity = gi.cvar ("sv_maxvelocity", "2000", 0);
 	sv_gravity = gi.cvar ("sv_gravity", "800", 0);
+
+#ifdef XATRIX
+	xatrix = gi.cvar ("xatrix", "0", CVAR_SERVERINFO|CVAR_LATCH);
+#endif //XATRIX
+#ifdef ROGUE
+	rogue = gi.cvar ("rogue", "0", CVAR_SERVERINFO|CVAR_LATCH);
+	sv_stopspeed = gi.cvar ("sv_stopspeed", "100", 0);		// PGM - was #define in g_phys.c
+	g_showlogic = gi.cvar ("g_showlogic", "0", 0);
+	huntercam = gi.cvar ("huntercam", "1", CVAR_SERVERINFO|CVAR_LATCH);
+	strong_mines = gi.cvar ("strong_mines", "0", 0);
+	randomrespawn = gi.cvar ("randomrespawn", "0", 0);
+#endif //ROGUE
 
 	// noset vars
 	dedicated = gi.cvar ("dedicated", "0", CVAR_NOSET);
@@ -159,10 +220,26 @@ void InitGame (void)
 	skill = gi.cvar ("skill", "1", CVAR_LATCH);
 	maxentities = gi.cvar ("maxentities", "1024", CVAR_LATCH);
 
+#ifdef ZOID
+	//This game.dll only supports deathmatch
+	//if (!deathmatch->value)
+	//{
+	//	gi.dprintf("Forcing deathmatch.");
+	//	gi.cvar_set("deathmatch", "1");
+	//}
+	//force coop off
+	//if (coop->value)
+	//	gi.cvar_set("coop", "0");
+#endif //ZOID
+
 	// change anytime vars
 	dmflags = gi.cvar ("dmflags", "0", CVAR_SERVERINFO);
 	fraglimit = gi.cvar ("fraglimit", "0", CVAR_SERVERINFO);
 	timelimit = gi.cvar ("timelimit", "0", CVAR_SERVERINFO);
+#ifdef ZOID
+	capturelimit = gi.cvar("capturelimit", "0", CVAR_SERVERINFO);
+	botctfteam = gi.cvar("botctfteam", "0", 0);
+#endif //ZOID
 	password = gi.cvar ("password", "", CVAR_USERINFO);
 	spectator_password = gi.cvar ("spectator_password", "", CVAR_USERINFO);
 	needpass = gi.cvar ("needpass", "0", CVAR_SERVERINFO);
@@ -201,6 +278,50 @@ void InitGame (void)
 	game.maxclients = maxclients->value;
 	game.clients = gi.TagMalloc (game.maxclients * sizeof(game.clients[0]), TAG_GAME);
 	globals.num_edicts = game.maxclients+1;
+
+#ifdef ZOID
+	capturelimit = gi.cvar ("capturelimit", "0", CVAR_SERVERINFO);
+	CTFInit();
+#endif //ZOID
+#ifdef ROCKETARENA
+	ra = gi.cvar("rocketarena", "0", CVAR_SERVERINFO);
+	arena = gi.cvar("arena", "1", 0);
+	selfdamage = gi.cvar("selfdamage", "1", 0);
+	healthprotect = gi.cvar("healthprotect", "0", 0);
+	armorprotect = gi.cvar("armorprotect", "0", 0);
+	ra_playercycle = gi.cvar("ra_playercycle", "0", 0);
+	ra_botcycle = gi.cvar("ra_botcycle", "0", 0);
+#endif //ROCKETARENA
+#ifdef CH
+	InitColoredHitman();
+#endif //CH
+#if defined(ZOID) && defined(ROCKETARENA) && defined(CH)
+	if (ctf->value && ra->value)
+	{
+		gi.cvar_forceset("rocketarena", "0");
+		gi.error("WARNING: can't run CTF and Rocket Arena 2 at the same time\n");
+	} //end if
+	if (ctf->value && ch->value)
+	{
+		gi.cvar_forceset("ch", "0");
+		gi.error("WARNING: can't run CTF and CH at the same time\n");
+	} //end if
+	if (ra->value && ch->value)
+	{
+		gi.cvar_forceset("ch", "0");
+		gi.error("WARNING: can't run CH and Rocket Arena 2 at the same time\n");
+	} //end if
+#endif
+#ifdef ROGUE
+	if(gamerules)
+	{
+		InitGameRules();	// if there are game rules to set up, do so now.
+	}
+#endif //ROGUE
+#ifdef BOT
+	BotSetup();
+	CreateBotMenu();
+#endif //BOT
 }
 
 //=========================================================
@@ -726,6 +847,12 @@ void ReadLevel (char *filename)
 	}
 
 	fclose (f);
+
+#ifdef ROGUE
+	// PMM - rebuild the hint path chains
+//	InitHintPaths();
+	// pmm
+#endif //ROGUE
 
 	// mark all clients as unconnected
 	for (i=0 ; i<maxclients->value ; i++)

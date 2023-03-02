@@ -648,7 +648,11 @@ void supertank_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int da
 // monster_supertank
 //
 
-/*QUAKED monster_supertank (1 .5 0) (-64 -64 0) (64 64 72) Ambush Trigger_Spawn Sight
+#ifdef XATRIX
+// RAFAEL (Powershield)
+#endif //XATRIX
+
+/*QUAKED monster_supertank (1 .5 0) (-64 -64 0) (64 64 72) Ambush Trigger_Spawn Sight Powershield
 */
 void SP_monster_supertank (edict_t *self)
 {
@@ -693,6 +697,14 @@ void SP_monster_supertank (edict_t *self)
 	
 	self->monsterinfo.currentmove = &supertank_move_stand;
 	self->monsterinfo.scale = MODEL_SCALE;
+
+#ifdef XATRIX
+	if (self->spawnflags & 8)
+	{
+		self->monsterinfo.power_armor_type = POWER_ARMOR_SHIELD;
+		self->monsterinfo.power_armor_power = 400;
+	}
+#endif //XATRIX
 
 	walkmonster_start(self);
 }
