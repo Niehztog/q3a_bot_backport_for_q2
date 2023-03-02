@@ -245,10 +245,10 @@ FastChecksum
 int FastChecksum(void *buffer, int bytes)
 {
 	int	checksum = 0;
-
+#if 0
 	while( bytes-- )  
 		checksum = (checksum << 4) ^ *((char *)buffer)++;
-
+#endif
 	return checksum;
 }
 

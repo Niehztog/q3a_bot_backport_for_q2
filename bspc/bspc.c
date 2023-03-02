@@ -943,8 +943,8 @@ int main (int argc, char **argv)
 #endif
 			"\n"
 			"Switches:\n"
-			//"   bsp2map  <[pakfilter/]filter.bsp>    = convert BSP to MAP\n"
-			//"   aasall   <quake3folder>              = create AAS files for all BSPs\n"
+			"   bsp2map  <[pakfilter/]filter.bsp>    = convert BSP to MAP\n"
+			"   aasall   <quake3folder>              = create AAS files for all BSPs\n"
 			"   bsp2aas  <[pakfilter/]filter.bsp>    = convert BSP to AAS\n"
 			"   reach    <filter.bsp>                = compute reachability & clusters\n"
 			"   cluster  <filter.aas>                = compute clusters\n"

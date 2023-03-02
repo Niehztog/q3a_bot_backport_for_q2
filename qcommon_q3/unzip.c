@@ -7,7 +7,6 @@
  *
  *****************************************************************************/
 
-#include "../client/client.h"
 #include "unzip.h"
 
 /* unzip.h -- IO for uncompress .zip files using zlib 
