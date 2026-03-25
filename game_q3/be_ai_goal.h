@@ -98,6 +98,8 @@ void BotSetAvoidGoalTime(int goalstate, int number, float avoidtime);
 void BotInitLevelItems(void);
 //regularly update dynamic entity items (dropped weapons, flags etc.)
 void BotUpdateEntityItems(void);
+//Q2 adapter: mark all statically-loaded BSP items as "always present"
+void BotMarkLevelItemsPresent(void);
 //interbreed the goal fuzzy logic
 void BotInterbreedGoalFuzzyLogic(int parent1, int parent2, int child);
 //save the goal fuzzy logic to disk

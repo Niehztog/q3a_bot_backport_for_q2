@@ -18,7 +18,7 @@ The whole Quake III Arena source code later was officially released by id softwa
 
 ## Technical Background
 
-One speciality of the Gladiator Bot for Quake II is, that it incorporates not only the original game modes, but also both mission packs, Capture The Flag and even Rocket Arena II game modes into a single game library. From a narchitectural point of view this has many advantages over having it all in seperate libraries residing in different directories. One of those being the possibility to quickly switch games modes without loading a different mod or to share game assets between game modes. Quake III Arena uses a similar approach, as it also as Capture The Flag game mode incorporated into the base game.
+One speciality of the Gladiator Bot for Quake II is, that it incorporates not only the original game modes, but also both mission packs, Capture The Flag and even Rocket Arena II game modes into a single game library. From an architectural point of view this has many advantages over having it all in seperate libraries residing in different directories. One of those being the possibility to quickly switch games modes without loading a different mod or to share game assets between game modes. Quake III Arena uses a similar approach, as it also as Capture The Flag game mode incorporated into the base game.
 
 As the Quake III Arena version of the former Gladiator Bot code has evolved over the time, the bot library from Quake III Arena is no longer compatible with the Quake II Gladiator bot, as it has been adapted to fit Quake III's game API and architecture.
 
@@ -34,9 +34,12 @@ Advantages:
 
 All relevant source code files have been identified and brought together in this repository. It was attempted to preserve the git history wherever possible, in order to make the evolution of the code more understandable.
 An initial version of a Makefile for compilation has been added. The Makefile from Yamagi Q2 was used as a base for this.
-Other than that, there is still a lot of work to do. While the Gladiator game and Q3 BotLib sources should more or less compile with several warnings, they are far from being compatible towards each other. A lot of work has to be done to make both work together.
+
+The adapter layer has been implemented and bots are loading, spawning, and moving around maps. AAS-based navigation, item goal selection, elevator and mover usage, entity type classification (players, items, projectiles, movers), range-aware weapon weight configuration, and rocket jump support have all been implemented and attempted. The Rogue and Xatrix mission pack items and weapons are accounted for in the bot configuration files, and CTF grappling hook support is partially wired up pending a one-line change in the game DLL. All of this requires further testing and tuning across different maps and game modes. A known remaining issue is that bots tend to rely on the blaster too often and do not pursue stronger weapons such as the rocket launcher or railgun as aggressively as they should.
 
 ## Technical approach
+
+The central piece of this backport is an adapter layer (`botlib/be_interface_q2.c`) that sits between the Q2 game DLL and the Q3 bot library. The Q2 game DLL expects botlib to expose a flat set of about 20 functions through a `bot_export_t` struct and calls back into the engine via 10 function pointers in `bot_import_t`. The Q3 botlib, by contrast, organises its exports into hierarchical sub-structs (AAS, EA, AI) totalling over 100 functions and expects a richer set of engine callbacks. The adapter translates in both directions: it presents the simple Q2 `bot_export_t` interface to the game DLL while driving the full Q3 botlib internally, and it bridges the Q2 engine callbacks (trace, point-contents, memory, file I/O) to the form the Q3 botlib requires. Per-frame, it feeds Q2 entity state - player positions, item pickups, moving platforms, projectiles - into the Q3 AAS and AI subsystems, then converts the resulting bot movement and action decisions back into Q2 input commands. This approach lets the Q3 botlib run unmodified against a Q2 game without requiring changes to either the Q2 engine or the Q2 game DLL beyond the original Gladiator bot integration points.
 
 In order to make it more transparent of how this repository was setup, all necessary steps were documented and built into a [shell script](./setup.sh). This script downloads all necessary sources, extracts them and puts them together as they can be found in this repository. In case someone else wants to continue this work, he may use this script as a base to get started with.
 The current analysis results of the code structure differences between Q2 Gladiator and Q3 Bots are documented in a [separate markdown file](./docs/DEVELOPMENT.md).
@@ -47,7 +50,7 @@ This repository and Makefile have been optimized to work with the Yamagi Q2 Buil
 
 ## Call for help
 
-As I am rather inexperienced with C and the architecture of the Quake II or III game source, the goal of this project seems like a huge effort for me to accomplish on my own, if not nearly impossible without further help. So I would like to invite anyone with experiences in C and familiar with the Quake II source code to join me in the effort of bringing back this brilliant peace of Quake II history to modern engines.
+The core integration is working, but there is still room for improvement - bot personality tuning, further weapon weight calibration, testing across more maps and game modes, and potential edge cases in the adapter layer. Anyone familiar with Q2 or Q3 engine internals is very welcome to contribute. Join me in my effort of bringing back this brilliant peace of Quake II history to modern engines.
 Feel free to fork this repository and to make pull requests. You can contact me at `niehztog (at) gmail.com`.
 
 January 29, 2023

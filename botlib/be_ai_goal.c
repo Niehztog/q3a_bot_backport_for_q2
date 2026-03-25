@@ -676,6 +676,25 @@ void BotInitLevelItems(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+void BotMarkLevelItemsPresent(void)
+{
+	levelitem_t *li;
+	//mark all statically-loaded BSP items as "always present" so that
+	//BotChooseLTGItem won't skip them (it skips items with entitynum==0).
+	//In Q3 entitynum is linked dynamically via BotUpdateEntityItems; in Q2
+	//BSP items are always present, so we use ENTITYNUM_NONE as a sentinel.
+	for (li = levelitems; li; li = li->next)
+	{
+		if (!li->entitynum)
+			li->entitynum = ENTITYNUM_NONE;
+	} //end for
+} //end of the function BotMarkLevelItemsPresent
+//===========================================================================
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//===========================================================================
 void BotGoalName(int number, char *name, int size)
 {
 	levelitem_t *li;
@@ -1384,7 +1403,6 @@ int BotChooseLTGItem(int goalstate, vec3_t origin, int *inventory, int travelfla
 	//if no goal item found
 	if (!bestitem)
 	{
-		/*
 		//if not in lava or slime
 		if (!AAS_AreaLava(areanum) && !AAS_AreaSlime(areanum))
 		{
@@ -1405,7 +1423,6 @@ int BotChooseLTGItem(int goalstate, vec3_t origin, int *inventory, int travelfla
 				return true;
 			} //end if
 		} //end if
-		*/
 		return false;
 	} //end if
 	//create a bot goal for this item

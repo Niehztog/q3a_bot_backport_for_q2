@@ -282,7 +282,7 @@ build/botlib/%.o: %.c
 	mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
-release/botlib/botlib.dll : LDFLAGS += -shared
+release/botlib/botlib.dll : LDFLAGS += -shared -Wl,--kill-at
 
 else ifeq ($(YQ2_OSTYPE), Darwin)
 
@@ -487,6 +487,7 @@ BOTLIB_OBJS_ = \
 	botlib/be_ai_weight.o \
 	botlib/be_ea.o \
 	botlib/be_interface.o \
+	botlib/be_interface_q2.o \
 	botlib/l_crc.o \
 	botlib/l_libvar.o \
 	botlib/l_log.o \

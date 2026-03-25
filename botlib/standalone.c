@@ -1,5 +1,5 @@
-#include "../qcommon_q3/q_shared.h"
-#include "botlib.h"
+#include "../game_q3/q_shared.h"
+#include "../game_q3/botlib.h"
 extern botlib_import_t botimport;
 void Com_Memset (void* dest, const int val, const size_t count)
 {
