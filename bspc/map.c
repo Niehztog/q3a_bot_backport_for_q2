@@ -1225,7 +1225,9 @@ int LoadMapFromBSP(struct quakefile_s *qf)
 		ResetMapLoading();
 		Q2_AllocMaxBSP();
 		Q2_LoadMapFromBSP(qf->filename, qf->offset, qf->length);
-		Q2_FreeMaxBSP();
+		/* Q2 BSP data kept alive for Q2_AAS_CalcReachAndClusters —
+		 * freed by Q2_FreeMaxBSP() call added in bspc.c after
+		 * reachability computation completes. */
 	} //endif
 	//Sin BSP file
 	else if ((idheader.ident == SIN_BSPHEADER && idheader.version == SIN_BSPVERSION) ||

@@ -290,3 +290,60 @@ void AAS_CalcReachAndClusters(struct quakefile_s *qf)
 	//calculate clusters
 	AAS_InitClustering();
 } //end of the function AAS_CalcReachAndClusters
+
+//===========================================================================
+// Q2 version: populate cm.cmodels from Q2 dmodels[] (already loaded by
+// Q2_LoadBSPFile) so that CM_InlineModel/CM_ModelBounds work for
+// AAS_Reachability_Elevator.  Skips CM_LoadMap which expects Q3 BSP format.
+//===========================================================================
+/* Bridge function in l_bsp_q2.c — passes the Q2 BSP globals (with
+ * their native Q2 types) to Q2_CM_LoadFromQ2BSP (in cm_load.c) as
+ * void* parameters to avoid Q2/Q3 type name conflicts. */
+void Q2_CM_LoadCollisionFromBSPGlobals(void);
+
+void Q2_AAS_CalcReachAndClusters(void)
+{
+	float time;
+
+	Log_Print("Q2: loading full collision model from Q2 BSP data...\n");
+	Q2_CM_LoadCollisionFromBSPGlobals();
+
+	worldmodel = 0; // world = model 0
+	//initialize bot import structure
+	AAS_InitBotImport();
+	//load the BSP entity string
+	AAS_LoadBSPFile();
+
+	/* Set Q2 physics values BEFORE AAS_InitSettings() reads them.
+	 * Without this, BSPC uses Q3 defaults which mismatch Q2 physics
+	 * (wrong step height, jump velocity, air control, swim speed, etc.)
+	 * causing reachabilities that the bot can't actually execute.
+	 * Values from yquake2/src/common/pmove.c. */
+	LibVarSet("phys_maxvelocity",       "300");
+	LibVarSet("phys_maxwalkvelocity",   "300");
+	LibVarSet("phys_maxcrouchvelocity", "100");
+	LibVarSet("phys_maxswimvelocity",   "400");
+	LibVarSet("phys_maxstep",           "18");
+	LibVarSet("phys_maxbarrier",        "50");
+	LibVarSet("phys_watergravity",      "100");
+	LibVarSet("phys_airaccelerate",     "0");
+	LibVarSet("phys_swimaccelerate",    "10");
+
+	//init physics settings (reads the LibVars set above)
+	AAS_InitSettings();
+	//initialize AAS link heap
+	AAS_InitAASLinkHeap();
+	//initialize the AAS linked entities for the new map
+	AAS_InitAASLinkedEntities();
+	//reset all reachabilities and clusters
+	aasworld.reachabilitysize = 0;
+	aasworld.numclusters = 0;
+	//set all view portals as cluster portals
+	AAS_SetViewPortalsAsClusterPortals();
+	//calculate reachabilities
+	AAS_InitReachability();
+	time = 0;
+	while(AAS_ContinueInitReachability(time)) time++;
+	//calculate clusters
+	AAS_InitClustering();
+} //end of the function Q2_AAS_CalcReachAndClusters

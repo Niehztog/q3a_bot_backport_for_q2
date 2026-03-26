@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #ifdef BSPC
 
 #include "../bspc/l_qfiles.h"
+#include "../bspc/l_mem.h"
 
 void SetPlaneSignbits (cplane_t *out) {
 	int	bits, j;
@@ -835,5 +836,213 @@ void CM_ModelBounds( clipHandle_t model, vec3_t mins, vec3_t maxs ) {
 	VectorCopy( cmod->mins, mins );
 	VectorCopy( cmod->maxs, maxs );
 }
+
+/*
+==================
+Q2_CM_LoadFromQ2BSP
+
+Full Q2 collision model loader for BSPC.  Populates the cm clipMap_t
+from Q2 BSP globals already loaded and byte-swapped by Q2_LoadBSPFile.
+This enables BotImport_Trace, BotImport_PointContents, CM_InlineModel,
+and CM_ModelBounds to work correctly during Q2 AAS reachability
+computation (elevator links, jump verification, water detection, etc.).
+
+Uses the already-parsed globals from l_bsp_q2.h:
+  dplanes/numplanes, dnodes/numnodes, dleafs/numleafs,
+  dbrushes/numbrushes, dbrushsides/numbrushsides,
+  dleafbrushes/numleafbrushes, dmodels/nummodels,
+  dvisdata/visdatasize
+==================
+*/
+/*
+==================
+Q2_CM_LoadFromQ2BSP
+
+Full Q2 collision model loader for BSPC.  Reads from the Q2 BSP globals
+already loaded and byte-swapped by Q2_LoadBSPFile (l_bsp_q2.c).
+
+Q2 and Q3 BSP types share the same names but different layouts.
+We declare the Q2-specific structs and globals locally here to avoid
+conflicts with the Q3 types from qfiles.h.
+==================
+*/
+#ifdef BSPC
+
+/* Q2 BSP on-disk struct layouts (differ from Q3 qfiles.h versions) */
+typedef struct { float normal[3]; float dist; int type; } q2_dplane_t;
+typedef struct {
+	int planenum; int children[2];
+	short mins[3]; short maxs[3];
+	unsigned short firstface, numfaces;
+} q2_dnode_t;
+typedef struct {
+	int contents; short cluster; short area;
+	short mins[3]; short maxs[3];
+	unsigned short firstleafface, numleaffaces;
+	unsigned short firstleafbrush, numleafbrushes;
+} q2_dleaf_t;
+typedef struct { int firstside, numsides, contents; } q2_dbrush_t;
+typedef struct { unsigned short planenum; short texinfo; } q2_dbrushside_t;
+typedef struct {
+	float mins[3], maxs[3], origin[3];
+	int headnode, firstface, numfaces;
+} q2_dmodel_t;
+
+void Log_Print(char *fmt, ...);
+
+/* Takes all Q2 BSP arrays as void* parameters to avoid type conflicts
+ * between Q2's and Q3's identically-named but differently-laid-out structs. */
+void Q2_CM_LoadFromQ2BSP(
+	int n_planes, void *p_planes,
+	int n_nodes, void *p_nodes,
+	int n_leafs, void *p_leafs,
+	int n_brushes, void *p_brushes,
+	int n_brushsides, void *p_brushsides,
+	int n_leafbrushes, void *p_leafbrushes,
+	int n_models, void *p_models,
+	int vissize, void *p_visdata,
+	int entsize, void *p_entdata)
+{
+	int i, j, bits;
+	q2_dplane_t     *q2planes     = (q2_dplane_t *)p_planes;
+	q2_dnode_t      *q2nodes      = (q2_dnode_t *)p_nodes;
+	q2_dleaf_t      *q2leafs      = (q2_dleaf_t *)p_leafs;
+	q2_dbrush_t     *q2brushes    = (q2_dbrush_t *)p_brushes;
+	q2_dbrushside_t *q2brushsides = (q2_dbrushside_t *)p_brushsides;
+	unsigned short  *q2leafbrushes = (unsigned short *)p_leafbrushes;
+	q2_dmodel_t     *q2models     = (q2_dmodel_t *)p_models;
+	byte            *q2visdata    = (byte *)p_visdata;
+
+	Com_Memset(&cm, 0, sizeof(cm));
+
+	/* --- Planes --- */
+	if (n_planes > 0) {
+		cm.planes = (cplane_t *) GetClearedMemory((n_planes + 12) * sizeof(cplane_t));
+		cm.numPlanes = n_planes;
+		for (i = 0; i < n_planes; i++) {
+			bits = 0;
+			for (j = 0; j < 3; j++) {
+				cm.planes[i].normal[j] = q2planes[i].normal[j];
+				if (cm.planes[i].normal[j] < 0) bits |= 1 << j;
+			}
+			cm.planes[i].dist = q2planes[i].dist;
+			cm.planes[i].type = q2planes[i].type;
+			cm.planes[i].signbits = bits;
+		}
+	}
+
+	/* --- Leaf brushes --- */
+	if (n_leafbrushes > 0) {
+		cm.leafbrushes = (int *) GetClearedMemory((n_leafbrushes + 1) * sizeof(int));
+		cm.numLeafBrushes = n_leafbrushes;
+		for (i = 0; i < n_leafbrushes; i++)
+			cm.leafbrushes[i] = (int)q2leafbrushes[i];
+	}
+
+	/* --- Brush sides --- */
+	if (n_brushsides > 0) {
+		cm.brushsides = (cbrushside_t *) GetClearedMemory((n_brushsides + 6) * sizeof(cbrushside_t));
+		cm.numBrushSides = n_brushsides;
+		for (i = 0; i < n_brushsides; i++) {
+			cm.brushsides[i].plane = &cm.planes[(int)q2brushsides[i].planenum];
+			cm.brushsides[i].surfaceFlags = 0;
+			cm.brushsides[i].shaderNum = 0;
+		}
+	}
+
+	/* --- Brushes --- */
+	if (n_brushes > 0) {
+		cm.brushes = (cbrush_t *) GetClearedMemory((n_brushes + 1) * sizeof(cbrush_t));
+		cm.numBrushes = n_brushes;
+		for (i = 0; i < n_brushes; i++) {
+			cm.brushes[i].sides = cm.brushsides + q2brushes[i].firstside;
+			cm.brushes[i].numsides = q2brushes[i].numsides;
+			cm.brushes[i].contents = q2brushes[i].contents;
+			cm.brushes[i].shaderNum = 0;
+			CM_BoundBrush(&cm.brushes[i]);
+		}
+	}
+
+	/* --- Leafs --- */
+	if (n_leafs > 0) {
+		cm.leafs = (cLeaf_t *) GetClearedMemory((n_leafs + 1) * sizeof(cLeaf_t));
+		cm.numLeafs = n_leafs;
+		for (i = 0; i < n_leafs; i++) {
+			cm.leafs[i].cluster = (int)q2leafs[i].cluster;
+			cm.leafs[i].area = (int)q2leafs[i].area;
+			cm.leafs[i].firstLeafBrush = (int)q2leafs[i].firstleafbrush;
+			cm.leafs[i].numLeafBrushes = (int)q2leafs[i].numleafbrushes;
+			cm.leafs[i].firstLeafSurface = 0;
+			cm.leafs[i].numLeafSurfaces = 0;
+			if (cm.leafs[i].cluster >= cm.numClusters)
+				cm.numClusters = cm.leafs[i].cluster + 1;
+			if (cm.leafs[i].area >= cm.numAreas)
+				cm.numAreas = cm.leafs[i].area + 1;
+		}
+		cm.areas = (cArea_t *) GetClearedMemory(cm.numAreas * sizeof(cArea_t));
+		cm.areaPortals = (int *) GetClearedMemory(cm.numAreas * cm.numAreas * sizeof(int));
+	}
+
+	/* --- Nodes --- */
+	if (n_nodes > 0) {
+		cm.nodes = (cNode_t *) GetClearedMemory((n_nodes + 6) * sizeof(cNode_t));
+		cm.numNodes = n_nodes;
+		for (i = 0; i < n_nodes; i++) {
+			cm.nodes[i].plane = cm.planes + q2nodes[i].planenum;
+			cm.nodes[i].children[0] = q2nodes[i].children[0];
+			cm.nodes[i].children[1] = q2nodes[i].children[1];
+		}
+	}
+
+	/* --- Visibility --- */
+	if (vissize > 0 && q2visdata) {
+		int *visheader = (int *)q2visdata;
+		cm.numClusters = visheader[0];
+		cm.vised = true;
+		cm.visibility = (byte *) GetClearedMemory(vissize);
+		Com_Memcpy(cm.visibility, q2visdata, vissize);
+		cm.clusterBytes = (cm.numClusters + 31) & ~31;
+	} else {
+		cm.clusterBytes = (cm.numClusters + 31) & ~31;
+		if (cm.clusterBytes > 0) {
+			cm.visibility = (byte *) GetClearedMemory(cm.clusterBytes);
+			Com_Memset(cm.visibility, 255, cm.clusterBytes);
+		}
+	}
+
+	/* --- Submodels --- */
+	if (n_models > 0) {
+		int count = n_models;
+		if (count > MAX_SUBMODELS) count = MAX_SUBMODELS;
+		cm.cmodels = (cmodel_t *) GetClearedMemory(count * sizeof(cmodel_t));
+		cm.numSubModels = count;
+		for (i = 0; i < count; i++) {
+			for (j = 0; j < 3; j++) {
+				cm.cmodels[i].mins[j] = q2models[i].mins[j] - 1;
+				cm.cmodels[i].maxs[j] = q2models[i].maxs[j] + 1;
+			}
+		}
+	}
+
+	/* --- Entity string (needed by AAS_LoadBSPFile / CM_EntityString) --- */
+	if (entsize > 0 && p_entdata) {
+		cm.entityString = (char *) GetClearedMemory(entsize + 1);
+		cm.numEntityChars = entsize;
+		Com_Memcpy(cm.entityString, p_entdata, entsize);
+		cm.entityString[entsize] = '\0';
+	}
+
+	/* --- Area portals: mark all areas as connected --- */
+	for (i = 0; i < cm.numAreas; i++)
+		for (j = 0; j < cm.numAreas; j++)
+			cm.areaPortals[i * cm.numAreas + j] = 1;
+
+	Log_Print("Q2_CM_LoadFromQ2BSP: %d planes, %d nodes, %d leafs, "
+	          "%d brushes, %d brushsides, %d models, %d clusters\n",
+	          cm.numPlanes, cm.numNodes, cm.numLeafs,
+	          cm.numBrushes, cm.numBrushSides, cm.numSubModels,
+	          cm.numClusters);
+}
+#endif /* BSPC */
 
 

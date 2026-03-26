@@ -924,14 +924,19 @@ void LeafNode(node_t *node, bspbrush_t *brushes)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void CheckPlaneAgainstParents (int pnum, node_t *node)
+/* Returns true if the plane is already used by a parent node.
+ * Originally this was a fatal Error() but Q2 maps commonly have
+ * brushes with duplicate planes (e.g. q2dm1 brush 824) which are
+ * harmless — the plane just gets skipped during BSP splitting. */
+qboolean CheckPlaneAgainstParents (int pnum, node_t *node)
 {
 	node_t	*p;
 
 	for (p = node->parent; p; p = p->parent)
 	{
-		if (p->planenum == pnum) Error("Tried parent");
+		if (p->planenum == pnum) return true;
 	} //end for
+	return false;
 } //end of the function CheckPlaneAgainstParants
 //===========================================================================
 //
@@ -1017,7 +1022,8 @@ side_t *SelectSplitSide (bspbrush_t *brushes, node_t *node)
 				pnum = side->planenum;
 				pnum &= ~1;	// allways use positive facing plane
 
-				CheckPlaneAgainstParents (pnum, node);
+				if (CheckPlaneAgainstParents (pnum, node))
+					continue;	// plane already used by parent — skip
 
 				if (!CheckPlaneAgainstVolume (pnum, node))
 					continue;	// would produce a tiny volume

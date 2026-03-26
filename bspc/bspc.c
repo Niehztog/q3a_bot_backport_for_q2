@@ -767,8 +767,11 @@ int main (int argc, char **argv)
 					LoadMapFromBSP(qf);
 					//create the AAS file
 					AAS_Create(filename);
-					//if it's a Quake3 map calculate the reachabilities and clusters
+					//calculate the reachabilities and clusters
 					if (loadedmaptype == MAPTYPE_QUAKE3) AAS_CalcReachAndClusters(qf);
+					else if (loadedmaptype == MAPTYPE_QUAKE2) Q2_AAS_CalcReachAndClusters();
+					//free Q2 BSP data now that reachability is computed
+					if (loadedmaptype == MAPTYPE_QUAKE2) Q2_FreeMaxBSP();
 					//
 					if (optimize) AAS_Optimize();
 					//
@@ -811,11 +814,16 @@ int main (int argc, char **argv)
 						//create the AAS file
 						AAS_Create(filename);
 					} //end else
-					//if it's a Quake3 map calculate the reachabilities and clusters
+					//calculate the reachabilities and clusters
 					if (loadedmaptype == MAPTYPE_QUAKE3)
 					{
 						AAS_CalcReachAndClusters(qf);
 					} //end if
+					else if (loadedmaptype == MAPTYPE_QUAKE2)
+					{
+						Q2_AAS_CalcReachAndClusters();
+						Q2_FreeMaxBSP();
+					} //end else if
 					//
 					if (optimize) AAS_Optimize();
 					//write out the stored AAS file
@@ -863,8 +871,12 @@ int main (int argc, char **argv)
 						LoadMapFromBSP(qf);
 						//create the AAS file
 						AAS_Create(filename);
-						//if it's a Quake3 map calculate the reachabilities and clusters
+						//calculate the reachabilities and clusters
 						if (loadedmaptype == MAPTYPE_QUAKE3) AAS_CalcReachAndClusters(qf);
+						else if (loadedmaptype == MAPTYPE_QUAKE2) {
+							Q2_AAS_CalcReachAndClusters();
+							Q2_FreeMaxBSP();
+						}
 					} //end else
 					//
 					if (optimize) AAS_Optimize();

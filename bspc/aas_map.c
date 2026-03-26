@@ -564,6 +564,13 @@ int AAS_ValidEntity(entity_t *mapent)
 	{
 		return true;
 	} //end else if
+	/* NOTE: func_plat, func_train and other Q2 movers are intentionally
+	 * NOT included here.  Their brushes must NOT be in the AAS BSP tree
+	 * (causes "Tried parent" errors from overlapping geometry).
+	 * Elevator reachabilities are computed at RUNTIME by the botlib's
+	 * AAS_Reachability_Elevator(), which finds func_plat entities in the
+	 * BSP entity string and calls AAS_BSPModelMinsMaxsOrigin() for their
+	 * bounds.  This is the same approach Q3 uses. */
 	return false;
 } //end of the function AAS_ValidEntity
 //===========================================================================

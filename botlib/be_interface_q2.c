@@ -1766,10 +1766,19 @@ static int Q2BotFindEnemy(int client, q2_botclient_t *bc, vec3_t bot_eye)
         /* #5 — FOV-limited detection.
          * Q3: if health decreased or enemy is shooting → 360° FOV.
          * Otherwise, scale FOV based on distance:
-         *   ~90° at close range, scaling up with distance.
+         *   ~90° at close range, up to ~180° at 810 units.
          * Q3 formula: f = 90 + 90 - (90 - dist²/(810*9))
-         * We simplify: if damaged, 360°; otherwise 90° base + dist scale */
-        if (healthdecrease) {
+         *
+         * Close-range override: at < 150 units, force 360° FOV.
+         * At that range a player would detect an enemy by sound,
+         * footsteps, and peripheral vision.  Without this, bots
+         * facing a wall ignore enemies standing right next to them.
+         *
+         * Stuck override: when the bot is in ROAMING (bad AAS area),
+         * it should fight nearby enemies rather than keep bouncing
+         * off walls.  Force 360° awareness when stuck. */
+        if (healthdecrease || dist_sq < 150.0f * 150.0f ||
+            bc->move_fail_time > 0.0f) {
             fov = 360.0f;
         } else {
             float d = dist_sq > (810.0f * 810.0f) ? (810.0f * 810.0f) : dist_sq;

@@ -900,6 +900,35 @@ void Q2_LoadBSPFile(char *filename, int offset, int length)
 	Q2_FixTextureReferences();
 } //end of the function Q2_LoadBSPFile
 
+//===========================================================================
+// Bridge function: calls Q2_CM_LoadFromQ2BSP (defined in cm_load.c) with
+// the Q2 BSP globals from this file.  This avoids type conflicts between
+// Q2 and Q3 struct definitions by passing everything as void*.
+//===========================================================================
+void Q2_CM_LoadFromQ2BSP(
+	int n_planes, void *p_planes,
+	int n_nodes, void *p_nodes,
+	int n_leafs, void *p_leafs,
+	int n_brushes, void *p_brushes,
+	int n_brushsides, void *p_brushsides,
+	int n_leafbrushes, void *p_leafbrushes,
+	int n_models, void *p_models,
+	int vissize, void *p_visdata,
+	int entsize, void *p_entdata);
+
+void Q2_CM_LoadCollisionFromBSPGlobals(void)
+{
+	Q2_CM_LoadFromQ2BSP(
+		numplanes, dplanes,
+		numnodes, dnodes,
+		numleafs, dleafs,
+		numbrushes, dbrushes,
+		numbrushsides, dbrushsides,
+		numleafbrushes, dleafbrushes,
+		nummodels, dmodels,
+		visdatasize, dvisdata,
+		entdatasize, dentdata);
+}
 
 /*
 =============
