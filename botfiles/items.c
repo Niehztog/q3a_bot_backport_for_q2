@@ -682,3 +682,99 @@ iteminfo "item_doppleganger"
     mins        { -16, -16, -16 }
     maxs        { 16, 16, 16 }
 }
+
+// -----------------------------------------------------------------------
+// CTF FLAGS  (#23 — Team play support)
+// -----------------------------------------------------------------------
+
+iteminfo "item_flag_team1"
+{
+    name        "Red Flag"
+    model       "players/male/flag1.md2"
+    modelindex  0
+    type        6
+    index       1
+    respawntime 0
+    mins        { -16, -16, -24 }
+    maxs        { 16, 16, 32 }
+}
+
+iteminfo "item_flag_team2"
+{
+    name        "Blue Flag"
+    model       "players/male/flag2.md2"
+    modelindex  0
+    type        6
+    index       2
+    respawntime 0
+    mins        { -16, -16, -24 }
+    maxs        { 16, 16, 32 }
+}
+
+// -----------------------------------------------------------------------
+// CTF TECH ITEMS
+// -----------------------------------------------------------------------
+
+iteminfo "item_tech1"
+{
+    name        "Disruptor Shield"
+    model       "models/ctf/resistance/tris.md2"
+    modelindex  0
+    type        5
+    index       16
+    respawntime 60
+    mins        { -16, -16, -16 }
+    maxs        { 16, 16, 16 }
+}
+
+iteminfo "item_tech2"
+{
+    name        "Power Amplifier"
+    model       "models/ctf/strength/tris.md2"
+    modelindex  0
+    type        5
+    index       17
+    respawntime 60
+    mins        { -16, -16, -16 }
+    maxs        { 16, 16, 16 }
+}
+
+iteminfo "item_tech3"
+{
+    name        "Time Accel"
+    model       "models/ctf/haste/tris.md2"
+    modelindex  0
+    type        5
+    index       18
+    respawntime 60
+    mins        { -16, -16, -16 }
+    maxs        { 16, 16, 16 }
+}
+
+iteminfo "item_tech4"
+{
+    name        "AutoDoc"
+    model       "models/ctf/regeneration/tris.md2"
+    modelindex  0
+    type        5
+    index       19
+    respawntime 60
+    mins        { -16, -16, -16 }
+    maxs        { 16, 16, 16 }
+}
+
+// -----------------------------------------------------------------------
+// CTF GRAPPLE WEAPON
+// -----------------------------------------------------------------------
+
+iteminfo "weapon_grapple"
+{
+    name        "Grapple"
+    model       "models/weapons/grapple/tris.md2"
+    modelindex  0
+    type        1
+    index       12
+    respawntime 0
+    mins        { -16, -16, -16 }
+    maxs        { 16, 16, 16 }
+}

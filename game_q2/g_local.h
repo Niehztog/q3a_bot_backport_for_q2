@@ -643,9 +643,9 @@ extern	spawn_temp_t	st;
 extern	int	sm_meat_index;
 extern	int	snd_fry;
 
-static	int	jacket_armor_index;
-static	int	combat_armor_index;
-static	int	body_armor_index;
+static	int	jacket_armor_index __attribute__((unused));
+static	int	combat_armor_index __attribute__((unused));
+static	int	body_armor_index __attribute__((unused));
 
 
 // means of death
@@ -794,7 +794,7 @@ extern int paused;
 #endif //ROGUE
 
 #ifdef ZOID
-static	qboolean	is_quad;
+static	qboolean	is_quad __attribute__((unused));
 #endif //ZOID
 
 #define world	(&g_edicts[0])

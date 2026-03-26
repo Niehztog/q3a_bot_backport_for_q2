@@ -392,6 +392,7 @@ void AAS_AirControl(vec3_t start, vec3_t end, vec3_t velocity, vec3_t cmdmove)
 	vec3_t dir;
 
 	VectorSubtract(end, start, dir);
+	(void)dir;
 } //end of the function AAS_AirControl
 //===========================================================================
 // applies ground friction to the given velocity
@@ -527,6 +528,7 @@ int AAS_ClientMovementPrediction(struct aas_clientmove_s *move,
 	aas_plane_t *plane, *plane2;
 	aas_trace_t trace, steptrace;
 	
+	(void)ax;
 	if (frametime <= 0) frametime = 0.1f;
 	//
 	phys_friction = aassettings.phys_friction;

@@ -335,15 +335,15 @@ qboolean BotStarted(edict_t *bot)
 void BotLib_BotLoadMap(char *mapname)
 {
 	bot_library_t *lib, *nextlib;
-	int errno;
+	int errnum;
 
 	for (lib = botglobals.firstbotlib; lib; lib = nextlib)
 	{
 		nextlib = lib->next;
-		errno = lib->funcs.BotLoadMap(mapname, MAX_MODELINDEXES, modelindexes,
+		errnum = lib->funcs.BotLoadMap(mapname, MAX_MODELINDEXES, modelindexes,
 												MAX_SOUNDINDEXES, soundindexes,
 												MAX_IMAGEINDEXES, imageindexes);
-		if (errno != BLERR_NOERROR)
+		if (errnum != BLERR_NOERROR)
 		{
 			int i;
 			edict_t *cl_ent;
@@ -875,7 +875,7 @@ bsp_trace_t BotLibImport_Trace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t en
 //===========================================================================
 int BotInitLibrary(bot_library_t *lib)
 {
-	int errno;
+	int errnum;
 	cvar_t *cvar;
 	char buf[144];
 
@@ -961,13 +961,13 @@ int BotInitLibrary(bot_library_t *lib)
 	if (cvar) lib->funcs.BotLibVarSet("cddir", cvar->string);
 	else lib->funcs.BotLibVarSet("cddir", "");
 	//setup the bot library
-	errno = lib->funcs.BotSetupLibrary();
-	if (errno != BLERR_NOERROR) return false;
+	errnum = lib->funcs.BotSetupLibrary();
+	if (errnum != BLERR_NOERROR) return false;
 	//load the map
-	errno = lib->funcs.BotLoadMap(level.mapname, MAX_MODELINDEXES, modelindexes,
+	errnum = lib->funcs.BotLoadMap(level.mapname, MAX_MODELINDEXES, modelindexes,
 																MAX_SOUNDINDEXES, soundindexes,
 																MAX_IMAGEINDEXES, imageindexes);
-	if (errno != BLERR_NOERROR) return false;
+	if (errnum != BLERR_NOERROR) return false;
 #ifdef TOURNEY
 	// Handle the Tourney hook --JKK
 	if((int)hook_enable->value)
@@ -1326,6 +1326,8 @@ void BotSetupBotLibImport(void)
 	gamebotimport.DebugLineCreate = DebugLineCreate;		//bl_debug.c
 	gamebotimport.DebugLineDelete = DebugLineDelete;		//bl_debug.c
 	gamebotimport.DebugLineShow = DebugLineShow;				//bl_debug.c
+	//PVS check — engine's inPVS for botlib visibility culling
+	gamebotimport.inPVS = gi.inPVS;
 	//
 	memcpy(&botglobals.gamebotimport, &gamebotimport, sizeof(bot_import_t));
 } //end of the function BotSetupLibrary

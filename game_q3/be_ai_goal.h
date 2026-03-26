@@ -100,6 +100,8 @@ void BotInitLevelItems(void);
 void BotUpdateEntityItems(void);
 //Q2 adapter: mark all statically-loaded BSP items as "always present"
 void BotMarkLevelItemsPresent(void);
+//Q2 adapter: populate items.c modelindex from game DLL's modelindexes[] table (Gladiator approach)
+void BotLinkItemModelIndicesFromTable(int nummodelindexes, char *modelindex[]);
 //interbreed the goal fuzzy logic
 void BotInterbreedGoalFuzzyLogic(int parent1, int parent2, int child);
 //save the goal fuzzy logic to disk

@@ -681,14 +681,63 @@ void BotMarkLevelItemsPresent(void)
 	levelitem_t *li;
 	//mark all statically-loaded BSP items as "always present" so that
 	//BotChooseLTGItem won't skip them (it skips items with entitynum==0).
-	//In Q3 entitynum is linked dynamically via BotUpdateEntityItems; in Q2
-	//BSP items are always present, so we use ENTITYNUM_NONE as a sentinel.
+	//
+	//IMPORTANT: we use -1, NOT ENTITYNUM_NONE (1023).  The sentinel must be
+	//  (a) non-zero so it passes the "if (!li->entitynum) continue" filter
+	//      in BotChooseLTGItem (line 1360), and
+	//  (b) <= 0 so BotItemGoalInVisButNotVisible (line 1672) returns false
+	//      immediately instead of looking up entity 1023 (which doesn't
+	//      exist and always appears "stale", causing every goal to be
+	//      abandoned the moment the bot can see its position).
 	for (li = levelitems; li; li = li->next)
 	{
 		if (!li->entitynum)
-			li->entitynum = ENTITYNUM_NONE;
+			li->entitynum = -1;
 	} //end for
 } //end of the function BotMarkLevelItemsPresent
+//===========================================================================
+// BotLinkItemModelIndicesFromTable
+//
+// Populate itemconfig modelindex fields from the game DLL's modelindexes[]
+// table (passed to BotLoadMap).  This is the Gladiator bot approach: the
+// game DLL intercepts gi.modelindex() and records every model path with
+// its runtime index.  We match item model paths against this table.
+//
+// modelindex[i] is the model path string for server modelindex i
+// (e.g., modelindex[5] = "models/weapons/g_rocket/tris.md2").
+//===========================================================================
+void BotLinkItemModelIndicesFromTable(int nummodelindexes, char *modelindex[])
+{
+	int i, idx, linked = 0, tried = 0, table_count = 0;
+	itemconfig_t *ic;
+
+	ic = itemconfig;
+	if (!ic) return;
+
+	//count non-NULL entries in table
+	for (idx = 1; idx < nummodelindexes; idx++)
+		if (modelindex[idx]) table_count++;
+
+	for (i = 0; i < ic->numiteminfo; i++)
+	{
+		if (ic->iteminfo[i].modelindex != 0) continue; //already set
+		if (!ic->iteminfo[i].model[0]) continue; //no model path
+		tried++;
+		//search the model index table for a matching path
+		for (idx = 1; idx < nummodelindexes; idx++)
+		{
+			if (!modelindex[idx]) continue;
+			if (!strcmp(modelindex[idx], ic->iteminfo[i].model))
+			{
+				ic->iteminfo[i].modelindex = idx;
+				linked++;
+				break;
+			}
+		}
+	}
+	botimport.Print(PRT_MESSAGE, "item model linking: %d linked, %d tried, %d table entries\n",
+		linked, tried, table_count);
+} //end of the function BotLinkItemModelIndicesFromTable
 //===========================================================================
 //
 // Parameter:				-

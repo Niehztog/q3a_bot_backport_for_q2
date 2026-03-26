@@ -809,12 +809,12 @@ void Bot_WriteString(char *s)
 {
 	if (!s)
 	{
-		strcpy(&networkmessage.message[networkmessage.writebyte], "");
+		strcpy((char *)&networkmessage.message[networkmessage.writebyte], "");
 		networkmessage.writebyte++;
 	} //end if
 	else
 	{
-		strcpy(&networkmessage.message[networkmessage.writebyte], s);
+		strcpy((char *)&networkmessage.message[networkmessage.writebyte], s);
 		networkmessage.writebyte += strlen(s) + 1;
 	} //end else
 } //end of the function Bot_WriteString

@@ -111,6 +111,9 @@ ifeq ($(COMPILER), clang)
 	#  about totally valid 'vec3_t bla = {0}' constructs.
 	CFLAGS += -Wno-missing-braces
 else ifeq ($(COMPILER), gcc)
+	# -Wno-missing-braces because GCC spams about mframe_t array
+	# initializers in original Q2 monster code (valid C, just old style).
+	CFLAGS += -Wno-missing-braces
 	# GCC 8.0 or higher.
 	ifeq ($(shell test $(COMPILERVER) -ge 80000; echo $$?),0)
 	    # -Wno-format-truncation and -Wno-format-overflow
