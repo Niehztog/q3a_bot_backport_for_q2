@@ -1294,8 +1294,20 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
              * model in modelindex2.  Set state.weapon so EntityIsShooting()
              * and other Q3 checks can detect the player's current weapon. */
             state.weapon = bue->modelindex2;
-        } else if (bue->solid == 3 /* SOLID_BSP */ && bue->modelindex > 0) {
+        } else if (ent > 0 && bue->solid == 3 /* SOLID_BSP */ && bue->modelindex > 0) {
+            /* Skip entity 0 (worldspawn) — it has SOLID_BSP + modelindex
+             * but is NOT a mover.  Without this check, the world entity
+             * masks real func_plat/func_door entities in
+             * AAS_OriginOfMoverWithModelNum lookups. */
             state.type = 4; /* ET_MOVER */
+            /* Q2 runtime modelindex is offset by 1 from BSP model number:
+             * Q2 assigns modelindex 1 to the world (*0), so *1 gets
+             * modelindex 2, *2 gets modelindex 3, etc.
+             * AAS reachabilities store the BSP model number (1, 2, ...),
+             * so we subtract 1 to match.  Without this, MoverDown()
+             * searches for modelindex=1 but the func_plat has modelindex=2
+             * and the lookup fails. */
+            state.modelindex = bue->modelindex - 1;
         } else if (bue->solid == 1 /* SOLID_TRIGGER */ && bue->modelindex > 0) {
             state.type = 2; /* ET_ITEM */
         } else if (bue->solid == 2 /* SOLID_BBOX */ && bue->modelindex > 0) {
