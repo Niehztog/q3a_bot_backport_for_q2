@@ -91,6 +91,10 @@ endif
 #  -fwrapv for defined integer wrapping. MSVC6 did this
 #   and the game code requires it.
 override CFLAGS += -std=gnu99 -fno-strict-aliasing -fwrapv
+# GCC 14 promoted several legacy-C diagnostics to hard errors in C99 mode.
+# Demote them back to warnings so the old Q2 code compiles unchanged.
+override CFLAGS += -Wno-incompatible-pointer-types -Wno-implicit-int \
+                   -Wno-implicit-function-declaration -Wno-int-conversion
 
 # -MMD to generate header dependencies. Unsupported by
 #  the Clang shipped with OS X.
