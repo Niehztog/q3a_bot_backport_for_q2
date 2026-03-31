@@ -1222,6 +1222,13 @@ int LoadMapFromBSP(struct quakefile_s *qf)
 	//Quake2 BSP file
 	else if (idheader.ident == Q2_BSPHEADER && idheader.version == Q2_BSPVERSION)
 	{
+		//Q2 player bbox is 32x32 (-16 to 16), Q3 default is 30x30 (-15 to 15).
+		//Must be set before map loading because AAS_CreateMapBrushes
+		//expands brushes by the player bbox during the load pass.
+		cfg.bboxes[0].mins[0] = cfg.bboxes[0].mins[1] = -16;
+		cfg.bboxes[0].maxs[0] = cfg.bboxes[0].maxs[1] = 16;
+		cfg.bboxes[1].mins[0] = cfg.bboxes[1].mins[1] = -16;
+		cfg.bboxes[1].maxs[0] = cfg.bboxes[1].maxs[1] = 16;
 		ResetMapLoading();
 		Q2_AllocMaxBSP();
 		Q2_LoadMapFromBSP(qf->filename, qf->offset, qf->length);

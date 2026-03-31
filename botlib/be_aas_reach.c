@@ -903,6 +903,144 @@ int AAS_Reachability_Swim(int area1num, int area2num)
 	return false;
 } //end of the function AAS_Reachability_Swim
 //===========================================================================
+// Face-adjacent walk reachability: when the edge-based algorithms all fail
+// (common with Q2 BSP where ground face edges at area boundaries may not
+// be shared or coplanar), use direct AAS face adjacency.  Every AAS face
+// stores frontarea/backarea — if two grounded areas share a face and their
+// floors are at similar heights, a walk reachability must exist.
+//
+// Parameter:				-
+// Returns:					true if a walk reachability was created
+// Changes Globals:		-
+//===========================================================================
+int AAS_Reachability_WalkFaceAdjacent(int area1num, int area2num)
+{
+	int i, j, numverts, faceidx;
+	float zdiff;
+	vec3_t facemid, start, end, dir;
+	aas_area_t *a1, *a2;
+	aas_face_t *face;
+	aas_edge_t *edge;
+	aas_lreachability_t *lreach;
+
+	if (!AAS_AreaGrounded(area1num) || !AAS_AreaGrounded(area2num)) return false;
+
+	a1 = &aasworld.areas[area1num];
+	a2 = &aasworld.areas[area2num];
+
+	//use floor level (mins[2]) for height comparison, not center[2]
+	//center[2] can be misleading for areas with tall ceilings
+	zdiff = a2->mins[2] - a1->mins[2]; //positive = area2 higher
+
+	//find a shared face between the two areas
+	for (i = 0; i < a1->numfaces; i++)
+	{
+		faceidx = aasworld.faceindex[a1->firstface + i];
+		face = &aasworld.faces[abs(faceidx)];
+		//positive faceindex: normal points into this area, backarea is the neighbor
+		//negative faceindex: normal points away, frontarea is the neighbor
+		if (faceidx > 0) { if (face->backarea != area2num) continue; }
+		else             { if (face->frontarea != area2num) continue; }
+
+		//shared face found — compute its centroid as the boundary point
+		VectorClear(facemid);
+		numverts = 0;
+		for (j = 0; j < face->numedges; j++)
+		{
+			edge = &aasworld.edges[abs(aasworld.edgeindex[face->firstedge + j])];
+			VectorAdd(facemid, aasworld.vertexes[edge->v[0]], facemid);
+			numverts++;
+		} //end for
+		if (!numverts) continue;
+		VectorScale(facemid, 1.0f / numverts, facemid);
+
+		//horizontal direction from area1 center to area2 center
+		VectorSubtract(a2->center, a1->center, dir);
+		dir[2] = 0;
+		if (VectorNormalize(dir) < 0.1f) continue;
+
+		//start inside area1, end inside area2
+		VectorMA(facemid, -INSIDEUNITS_WALKEND, dir, start);
+		VectorMA(facemid,  INSIDEUNITS_WALKEND, dir, end);
+		start[2] = a1->mins[2] + 1;
+		end[2]   = a2->mins[2] + 1;
+
+		//determine travel type based on floor height difference
+		if (zdiff > -aassettings.phys_maxstep && zdiff < aassettings.phys_maxstep)
+		{
+			//within step height — walk reachability
+			lreach = AAS_AllocReachability();
+			if (!lreach) return false;
+			lreach->areanum = area2num;
+			lreach->facenum = 0;
+			lreach->edgenum = abs(faceidx);
+			VectorCopy(start, lreach->start);
+			VectorCopy(end, lreach->end);
+			lreach->traveltype = TRAVEL_WALK;
+			lreach->traveltime = 1;
+			lreach->next = areareachability[area1num];
+			areareachability[area1num] = lreach;
+			reach_walk++;
+			return true;
+		}
+		else if (zdiff > 0 && zdiff < aassettings.phys_maxbarrier)
+		{
+			//area2 higher than step but within barrier height — barrier jump
+			if (!AAS_AreaCrouch(area1num) && !AAS_AreaCrouch(area2num))
+			{
+				lreach = AAS_AllocReachability();
+				if (!lreach) return false;
+				lreach->areanum = area2num;
+				lreach->facenum = 0;
+				lreach->edgenum = abs(faceidx);
+				VectorCopy(start, lreach->start);
+				VectorCopy(end, lreach->end);
+				lreach->traveltype = TRAVEL_BARRIERJUMP;
+				lreach->traveltime = aassettings.rs_barrierjump;
+				lreach->next = areareachability[area1num];
+				areareachability[area1num] = lreach;
+				reach_barrier++;
+				return true;
+			}
+		}
+		else if (zdiff < 0)
+		{
+			//area2 is lower — walk off ledge
+			float falldist = -zdiff;
+			if (!aassettings.rs_maxfallheight || falldist < aassettings.rs_maxfallheight)
+			{
+				lreach = AAS_AllocReachability();
+				if (!lreach) return false;
+				lreach->areanum = area2num;
+				lreach->facenum = 0;
+				lreach->edgenum = abs(faceidx);
+				VectorCopy(start, lreach->start);
+				VectorCopy(end, lreach->end);
+				lreach->traveltype = TRAVEL_WALKOFFLEDGE;
+				lreach->traveltime = aassettings.rs_startwalkoffledge +
+					falldist * 50 / aassettings.phys_gravity;
+				//fall damage travel time penalties
+				if (!AAS_AreaSwim(area2num) && !AAS_AreaJumpPad(area2num))
+				{
+					if (AAS_FallDelta(falldist) > aassettings.phys_falldelta5)
+						lreach->traveltime += aassettings.rs_falldamage5;
+					if (AAS_FallDelta(falldist) > aassettings.phys_falldelta10)
+						lreach->traveltime += aassettings.rs_falldamage10;
+				}
+				lreach->next = areareachability[area1num];
+				areareachability[area1num] = lreach;
+				reach_walkoffledge++;
+				return true;
+			}
+		}
+		//zdiff > maxbarrier: too high to barrier jump up — no reachability
+		//(reverse direction will be handled as walk-off-ledge)
+		return false;
+	} //end for
+
+	return false;
+} //end of the function AAS_Reachability_WalkFaceAdjacent
+//===========================================================================
 // searches for reachabilities between adjacent areas with equal floor
 // heights
 //
@@ -1162,10 +1300,13 @@ int AAS_Reachability_Step_Barrier_WaterJump_WalkOffLedge(int area1num, int area2
 					VectorCopy(aasworld.vertexes[edge2->v[1]], v4);
 					//check the distance between the two points and the vertical plane
 					//through the edge of area1
+					//NOTE: Q3's original tolerance was 0.1, but Q2 BSP uses integer
+					//vertex coords and brush expansion with the wider Q2 player bbox
+					//can shift ground edges beyond that at area boundaries.
 					diff = DotProduct(normal, v3) - dist;
-					if (diff < -0.1 || diff > 0.1) continue;
+					if (diff < -0.5 || diff > 0.5) continue;
 					diff = DotProduct(normal, v4) - dist;
-					if (diff < -0.1 || diff > 0.1) continue;
+					if (diff < -0.5 || diff > 0.5) continue;
 					//
 					//project the two ground edges into the step side plane
 					//and calculate the shortest distance between the two
@@ -4419,6 +4560,9 @@ int AAS_ContinueInitReachability(float time)
 			if (AAS_Reachability_Ladder(i, j)) continue;
 			//check for a jump reachability
 			if (AAS_Reachability_Jump(i, j)) continue;
+			//face-adjacent walk: catches adjacent grounded areas where
+			//the edge-based checks above failed (Q2 BSP geometry)
+			if (AAS_Reachability_WalkFaceAdjacent(i, j)) continue;
 		} //end for
 		//never create these reachabilities from teleporter or jumppad areas
 		if (aasworld.areasettings[i].contents & (AREACONTENTS_TELEPORTER|AREACONTENTS_JUMPPAD))

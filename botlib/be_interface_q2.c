@@ -376,6 +376,12 @@ typedef struct {
     vec3_t      roam_dir;           /* current random walk direction */
     float       roam_dir_time;      /* AAS_Time() when roam_dir was last set */
     float       move_fail_time;     /* AAS_Time() when movedir first became zero */
+    /* Area-loop detection: when the bot cycles through the same small set
+     * of areas repeatedly, the AAS has a routing dead-end (missing
+     * reachabilities at a passageway).  Detect and break out by roaming. */
+    int         area_history[8];    /* ring buffer of recent area numbers */
+    int         area_history_idx;   /* next write index */
+    float       area_loop_time;     /* AAS_Time() when loop was first detected */
 } q2_botclient_t;
 
 /* ====================================================================
@@ -395,6 +401,7 @@ typedef struct {
     vec3_t prev_origin;
     vec3_t velocity;       /* computed: (origin - prev_origin) / dt */
     float  prev_time;      /* AAS_Time() of last update */
+    int    effects;        /* Q2 effects flags from last update */
 } q2_entity_velocity_t;
 static q2_entity_velocity_t q2_entvelocity[Q2_MAX_ENTITIES];
 
@@ -1276,16 +1283,29 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
      *                   are picked up and respawn.  This enables dynamic item
      *                   tracking including dropped weapons from dead players.
      *
-     *   ET_MISSILE (3): SOLID_BBOX (2) + modelindex > 0.
-     *                   Rockets, grenades, blaster bolts, and the CTF grapple
-     *                   hook.  state.weapon is set to modelindex so that
-     *                   GrappleState() can identify the hook when the game DLL
-     *                   sets weapindex_grapple to the hook model's index via
-     *                   BotLibVarSet("weapindex_grapple", "<modelindex>").
+     *   ET_MISSILE (3): Identified by Q2 effects flags (EF_ROCKET,
+     *                   EF_GRENADE, EF_BLASTER) which the engine sets on
+     *                   actual projectile entities.  This mirrors Q3 where
+     *                   the game DLL explicitly sets s.eType = ET_MISSILE.
+     *                   Previously we used SOLID_BBOX + modelindex > 0 but
+     *                   that misclassified any SOLID_BBOX entity (e.g.
+     *                   func_object, debris, misc_explobox) as a missile,
+     *                   creating permanent false avoid-spots that blocked
+     *                   bot navigation.
+     *                   Fallback: SOLID_BBOX + modelindex > 0 entities
+     *                   WITHOUT missile effects are classified ET_GENERAL.
+     *                   The CTF grapple hook also uses SOLID_BBOX — it is
+     *                   caught by the effects check (EF_GIB on some mods)
+     *                   or by the grapple weapindex match.
      *
      *   ET_GENERAL (0): everything else — trigger volumes, non-solid
-     *                   decorative models, effects (SOLID_NOT with any
-     *                   modelindex, or any other solid value). */
+     *                   decorative models, effects, SOLID_BBOX entities
+     *                   that are not missiles (func_object, debris). */
+    /* Q2 effects flags for projectile identification */
+#define Q2_EF_BLASTER   0x00000008
+#define Q2_EF_ROCKET    0x00000010
+#define Q2_EF_GRENADE   0x00000020
+#define Q2_MISSILE_EFFECTS (Q2_EF_BLASTER | Q2_EF_ROCKET | Q2_EF_GRENADE)
     {
         int maxcl = (int)LibVarGetValue("maxclients");
         if (maxcl > 0 && ent >= 1 && ent <= maxcl) {
@@ -1310,7 +1330,10 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
             state.modelindex = bue->modelindex - 1;
         } else if (bue->solid == 1 /* SOLID_TRIGGER */ && bue->modelindex > 0) {
             state.type = 2; /* ET_ITEM */
-        } else if (bue->solid == 2 /* SOLID_BBOX */ && bue->modelindex > 0) {
+        } else if (bue->effects & Q2_MISSILE_EFFECTS) {
+            /* Q2 projectiles: the engine sets EF_ROCKET, EF_GRENADE, or
+             * EF_BLASTER on actual missile entities for trail rendering.
+             * This is the authoritative signal, like Q3's s.eType. */
             state.type   = 3; /* ET_MISSILE */
             state.weapon = bue->modelindex; /* proxy: game DLL sets weapindex_grapple
                                              * to grapple hook model index for CTF */
@@ -1335,6 +1358,7 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
         }
         VectorCopy(bue->origin, ev->prev_origin);
         ev->prev_time = AAS_Time();
+        ev->effects = bue->effects;
     }
 
     return Export_BotLibUpdateEntity(ent, &state);
@@ -1415,47 +1439,41 @@ static int Q2BotAggression(q2_botclient_t *bc)
 }
 
 /* ====================================================================
- * Q2BotCheckGrenades — dodge grenades and rockets on the ground
+ * Q2BotCheckGrenades — dodge grenades on the ground
  *
- * Scans all ET_MISSILE entities and places avoid spots so the AAS
- * pathfinder routes around them.  Mirrors Q3's BotCheckForGrenades
- * (ai_dmq3.c:4718) and BotCheckForProxMines.
+ * Scans entities for Q2 grenades (identified by EF_GRENADE in the
+ * effects field) and places avoid spots so the AAS pathfinder routes
+ * around them.  Mirrors Q3's BotCheckForGrenades (ai_dmq3.c:4718)
+ * which checks state->eType == ET_MISSILE && state->weapon ==
+ * WP_GRENADE_LAUNCHER.
+ *
+ * Only grenades are avoided — rockets and blaster bolts travel too
+ * fast to dodge via AAS navigation and would flood the 32-slot
+ * avoid-spot array.  Grenades bounce on the ground and sit still
+ * before exploding, so even zero-velocity grenades are threats.
  * ==================================================================== */
 static void Q2BotCheckGrenades(q2_botclient_t *bc)
 {
     int ent;
     aas_entityinfo_t entinfo;
     vec3_t diff;
-    float speed;
 
-    /* Clear previous avoid spots and rebuild from current missiles.
-     *
-     * Q3's BotCheckForGrenades checks state->weapon == WP_GRENADE_LAUNCHER
-     * to only avoid grenades.  Q2 missiles don't carry a weapon type, so
-     * we filter by VELOCITY from our adapter-side cache (computed from
-     * origin deltas in Q2BotUpdateEntity).  Only SLOW projectiles (speed
-     * < 300) are avoided — these are grenades bouncing on the ground.
-     * Fast projectiles (rockets at 650, blaster at 1000+) are too fast
-     * to dodge via AAS navigation and would flood the 32-slot array. */
     BotAddAvoidSpot(bc->movestate, vec3_origin, 0, AVOID_CLEAR);
 
     for (ent = AAS_NextEntity(0); ent; ent = AAS_NextEntity(ent)) {
         if (AAS_EntityType(ent) != 3 /* ET_MISSILE */) continue;
+        /* Check the cached Q2 effects flags: only avoid actual grenades.
+         * Q2_EF_GRENADE (0x20) is set by the engine on grenade entities
+         * for trail rendering — it's the authoritative signal, just like
+         * Q3 checks state->weapon == WP_GRENADE_LAUNCHER. */
+        if (ent < 0 || ent >= Q2_MAX_ENTITIES) continue;
+        if (!(q2_entvelocity[ent].effects & Q2_EF_GRENADE)) continue;
         AAS_EntityInfo(ent, &entinfo);
         if (!entinfo.valid) continue;
-        /* Only nearby missiles */
+        /* Only nearby grenades */
         VectorSubtract(entinfo.origin, bc->origin, diff);
         if (VectorLength(diff) > 400.0f) continue;
-        /* Read velocity from adapter-side cache (NOT from entinfo.velocity
-         * which is always zero because Q3's aas_entityinfo_t has no
-         * velocity field and AAS_UpdateEntity never copies one). */
-        if (ent >= 0 && ent < Q2_MAX_ENTITIES) {
-            speed = VectorLength(q2_entvelocity[ent].velocity);
-        } else {
-            speed = 9999.0f; /* unknown → skip */
-        }
-        if (speed > 300.0f) continue; /* fast projectile → don't avoid */
-        BotAddAvoidSpot(bc->movestate, entinfo.origin, 120, AVOID_ALWAYS);
+        BotAddAvoidSpot(bc->movestate, entinfo.origin, 160, AVOID_ALWAYS);
     }
 }
 
@@ -2089,6 +2107,61 @@ static qboolean Q2BotNavigateGoals(int client, q2_botclient_t *bc,
     if (bc->hasgoal) {
         bot_goal_t active_goal;
         if (BotGetTopGoal(bc->goalstate, &active_goal)) {
+            /* --- Area-loop detection ---
+             * Track the bot's recent AAS areas.  If the same small set of
+             * areas keeps repeating (routing dead-end at a passageway with
+             * missing reachabilities), abandon the goal and roam to escape. */
+            {
+                int cur_area = BotReachabilityArea(bc->origin, client);
+                if (cur_area > 0) {
+                    /* Record area in ring buffer */
+                    int prev_idx = (bc->area_history_idx + 7) & 7;
+                    if (bc->area_history[prev_idx] != cur_area) {
+                        bc->area_history[bc->area_history_idx] = cur_area;
+                        bc->area_history_idx = (bc->area_history_idx + 1) & 7;
+                    }
+                    /* Check for loop: count distinct areas in the ring buffer.
+                     * If <= 3 distinct areas AND all 8 slots filled, we have
+                     * a routing loop. */
+                    {
+                        int i, j, distinct = 0;
+                        int seen[8];
+                        qboolean ring_full = true;
+                        for (i = 0; i < 8; i++) {
+                            if (bc->area_history[i] == 0) { ring_full = false; break; }
+                            for (j = 0; j < distinct; j++)
+                                if (seen[j] == bc->area_history[i]) break;
+                            if (j == distinct) seen[distinct++] = bc->area_history[i];
+                        }
+                        if (ring_full && distinct <= 3) {
+                            if (bc->area_loop_time == 0.0f)
+                                bc->area_loop_time = now;
+                            /* After 3 seconds of looping, abandon goal and roam */
+                            if ((now - bc->area_loop_time) > 3.0f) {
+                                if (LibVarGetValue("bot_developer")) {
+                                    botimport.Print(PRT_MESSAGE,
+                                        "NAV_DIAG client %d: AREA LOOP detected "
+                                        "(areas %d/%d/%d), forcing roam\n",
+                                        client, seen[0],
+                                        distinct > 1 ? seen[1] : 0,
+                                        distinct > 2 ? seen[2] : 0);
+                                }
+                                BotSetAvoidGoalTime(bc->goalstate,
+                                                     active_goal.number, 30.0f);
+                                BotPopGoal(bc->goalstate);
+                                if (bc->hasnbg) bc->hasnbg = false;
+                                else { bc->hasgoal = false; bc->ltg_check_time = 0.0f; }
+                                Com_Memset(bc->area_history, 0, sizeof(bc->area_history));
+                                bc->area_loop_time = 0.0f;
+                                goto roam_fallback;
+                            }
+                        } else {
+                            bc->area_loop_time = 0.0f;  /* not looping, reset */
+                        }
+                    }
+                }
+            }
+
             BotMoveToGoal(moveresult, bc->movestate, &active_goal, TFL_DEFAULT);
 
             /* BotMoveToGoal can fail to produce movement in several ways:
@@ -2152,8 +2225,11 @@ static qboolean Q2BotNavigateGoals(int client, q2_botclient_t *bc,
                     bc->ltg_check_time = 0.0f;
                 }
             }
-            /* Goal reached — pop and keep going */
+            /* Goal reached — pop and avoid for 10s to prevent
+             * oscillation when the Q2 engine doesn't actually
+             * consume the item (pickup mechanic mismatch). */
             else if (BotTouchingGoal(bc->origin, &active_goal)) {
+                BotSetAvoidGoalTime(bc->goalstate, active_goal.number, 10.0f);
                 BotPopGoal(bc->goalstate);
                 if (bc->hasnbg) {
                     bc->hasnbg = false;
@@ -2819,7 +2895,7 @@ q2_bot_export_t *GetBotAPI(q2_bot_import_t *import)
 
     /* Debug logging: set to 1 via BotLibVarSet("bot_developer","1") from
      * the game DLL or console to enable verbose bot AI messages. */
-    LibVarSet("bot_developer", "1");
+    LibVarSet("bot_developer", "0");
 
     /* Fill Q2 export struct */
     Com_Memset(&q2_export, 0, sizeof(q2_export));

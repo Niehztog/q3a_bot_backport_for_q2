@@ -556,6 +556,11 @@ void BotLib_BotStartFrame(float time)
 	{
 		//set the dmflags
 		lib->funcs.BotLibVarSet("dmflags", dmflags->string);
+		//forward bot_developer cvar so it can be toggled at runtime
+		{
+			cvar_t *bd = gi.cvar("bot_developer", "0", 0);
+			if (bd) lib->funcs.BotLibVarSet("bot_developer", bd->string);
+		}
 		//start the server frame
 		lib->funcs.BotStartFrame(time);
 	} //end for

@@ -74,6 +74,30 @@ void Q2_CreateMapTexinfo(void)
 Q2_BrushContents
 ===========
 */
+/* Q2 content flags that occupy the same bit positions as Q3 bot-specific
+ * AAS flags.  If these are not stripped before AAS creation, aas_map.c
+ * will misinterpret them:
+ *   Q2 CURRENT_0   (0x40000)     = Q3 TELEPORTER
+ *   Q2 CURRENT_90  (0x80000)     = Q3 JUMPPAD
+ *   Q2 CURRENT_180 (0x100000)    = Q3 CLUSTERPORTAL
+ *   Q2 CURRENT_270 (0x200000)    = Q3 DONOTENTER  (bot avoids area!)
+ *   Q2 CURRENT_UP  (0x400000)    = Q3 BOTCLIP     (phantom solid wall!)
+ *   Q2 CURRENT_DOWN(0x800000)    = Q3 MOVER
+ *   Q2 Q2TRANSLUCENT(0x10000000) = Q3 STRUCTURAL
+ */
+#define Q2_CONFLICTING_CONTENTS \
+	(CONTENTS_CURRENT_0   | CONTENTS_CURRENT_90  | CONTENTS_CURRENT_180 | \
+	 CONTENTS_CURRENT_270 | CONTENTS_CURRENT_UP  | CONTENTS_CURRENT_DOWN | \
+	 CONTENTS_Q2TRANSLUCENT)
+
+static void Q2_StripConflictingContents(mapbrush_t *b)
+{
+	int i;
+	b->contents &= ~Q2_CONFLICTING_CONTENTS;
+	for (i = 0; i < b->numsides; i++)
+		b->original_sides[i].contents &= ~Q2_CONFLICTING_CONTENTS;
+}
+
 int	Q2_BrushContents (mapbrush_t *b)
 {
 	int			contents;
@@ -778,6 +802,20 @@ void Q2_BSPBrushToMapBrush(dbrush_t *bspbrush, entity_t *mapent)
 	dbrushside_t *bspbrushside;
 	dplane_t *bspplane;
 
+	//Q2 hint/skip brushes are only for VIS optimization and have no
+	//collision.  Skip them entirely — bevel sides on these brushes lack
+	//SURF_HINT, which causes Q2_BrushContents to misclassify them as
+	//CONTENTS_SOLID, creating invisible walls in the AAS.
+	for (n = 0; n < bspbrush->numsides; n++)
+	{
+		bspbrushside = &dbrushsides[bspbrush->firstside + n];
+		if (bspbrushside->texinfo > 0 &&
+			(texinfo[bspbrushside->texinfo].flags & (SURF_HINT|SURF_SKIP)))
+		{
+			return; //hint/skip brush — do not load
+		}
+	}
+
 	if (nummapbrushes >= MAX_MAPFILE_BRUSHES)
 		Error ("nummapbrushes >= MAX_MAPFILE_BRUSHES");
 
@@ -880,8 +918,7 @@ void Q2_BSPBrushToMapBrush(dbrush_t *bspbrush, entity_t *mapent)
 	} //end for
 
 	// get the content for the entire brush
-	b->contents = bspbrush->contents;
-	Q2_BrushContents(b);
+	b->contents = Q2_BrushContents(b);
 
 	if (BrushExists(b))
 	{
@@ -893,6 +930,8 @@ void Q2_BSPBrushToMapBrush(dbrush_t *bspbrush, entity_t *mapent)
 	//if we're creating AAS
 	if (create_aas)
 	{
+		//strip Q2 content flags that collide with Q3 AAS flags
+		Q2_StripConflictingContents(b);
 		//create the AAS brushes from this brush, don't add brush bevels
 		AAS_CreateMapBrushes(b, mapent, false);
 		return;
