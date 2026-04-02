@@ -2005,22 +2005,30 @@ static void Q2BotAimAndFire(int client, int enemy, vec3_t bot_eye)
         }
     }
 
-    /* Pre-fire LOS check: trace from eye to aim target */
+    /* Pre-fire LOS check and Q3-style splash damage avoidance.
+     * Mirrors Q3 ai_dmq3.c BotCheckAttack lines 3629-3667. */
     trace = q2import.Trace(bot_eye, NULL, NULL, bestorigin,
                            client + 1, 1 /* CONTENTS_SOLID */);
-    if (trace.fraction < 1.0f) return; /* wall in the way */
-
-    /* Splash weapon safety at point blank */
-    {
-        vec3_t diff;
-        float enemy_dist;
-        VectorSubtract(entinfo.origin, bot_eye, diff);
-        enemy_dist = VectorLength(diff);
-        if (enemy_dist < 100.0f) {
-            if (bc->best_weapon_num == 8 || bc->best_weapon_num == 7 ||
-                bc->best_weapon_num == 6) {
-                return;
+    if (trace.fraction < 1.0f) {
+        weaponinfo_t wi;
+        BotGetWeaponInfo(bc->weaponstate, bc->best_weapon_num, &wi);
+        if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
+            /* Splash weapon hitting a wall: check if splash would hurt us.
+             * Q3 formula: self_damage = (damage - 0.5 * impact_dist) * 0.5 */
+            vec3_t diff;
+            float aim_dist, impact_dist, points;
+            VectorSubtract(bestorigin, bot_eye, diff);
+            aim_dist = VectorLength(diff);
+            impact_dist = aim_dist * trace.fraction;
+            if (impact_dist < wi.proj.radius) {
+                points = (wi.proj.damage - 0.5f * impact_dist) * 0.5f;
+                if (points > 0) {
+                    return; /* splash would hurt us, don't fire */
+                }
             }
+            /* Splash is safe distance: fire at wall/floor near enemy */
+        } else {
+            return; /* Hitscan weapon blocked by wall */
         }
     }
 
