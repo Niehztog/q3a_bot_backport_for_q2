@@ -1516,7 +1516,7 @@ static void Q2BotCheckAir(q2_botclient_t *bc)
             airgoal.areanum = AAS_PointAreaNum(airgoal.origin);
             airgoal.mins[0] = -8; airgoal.mins[1] = -8; airgoal.mins[2] = -8;
             airgoal.maxs[0] =  8; airgoal.maxs[1] =  8; airgoal.maxs[2] =  8;
-            if (airgoal.areanum > 0) {
+            if (airgoal.areanum > 0 && !bc->hasnbg) {
                 BotPushGoal(bc->goalstate, &airgoal);
                 bc->hasnbg = true;
             }
@@ -2454,8 +2454,14 @@ static int Q2BotAI(int client, float thinktime)
                 bc->enemysight_time = now; /* #2: reaction timer starts */
                 bc->enemyposition_time = 0; /* force velocity cache update */
                 if (aggression >= 50) {
+                    /* Q3 empties goal stack when entering aggressive fight
+                     * (ai_dmnet.c AINode_Seek_LTG line 1858). */
+                    BotEmptyGoalStack(bc->goalstate);
+                    bc->hasgoal = false;
+                    bc->hasnbg  = false;
                     bc->aistate = Q2AI_BATTLE_FIGHT;
                 } else {
+                    /* Q3 preserves goals when retreating. */
                     bc->aistate = Q2AI_BATTLE_RETREAT;
                 }
             }
@@ -2609,24 +2615,12 @@ static int Q2BotAI(int client, float thinktime)
 
         case Q2AI_BATTLE_FIGHT:
             /* Dedicated combat — strafe, dodge, aim and fire.
-             * #3 — Check for nearby items periodically even during fight.
-             * Mirrors Q3 ai_dmnet.c: AINode_Battle_Fight checks for NBG
-             * and transitions to AINode_Battle_NBG. */
+             * Q3 ai_dmnet.c AINode_Battle_Fight: pure combat, no item
+             * pickup.  The goal stack was emptied on entering this state. */
             in_combat = true;
             if (bc->enemy >= 0) {
                 Q2BotAttackMove(client, bc, bc->enemy);
                 Q2BotAimAndFire(client, bc->enemy, bot_eye);
-            }
-            /* Every 1s, check for nearby health/armor/ammo pickup */
-            if (bc->retreat_check_time < AAS_Time()) {
-                bc->retreat_check_time = AAS_Time() + 1.0f;
-                if (BotChooseNBGItem(bc->goalstate, bc->origin,
-                                      bc->inventory, TFL_DEFAULT,
-                                      NULL, 150)) {
-                    bc->hasnbg = true;
-                    bc->nbg_combat_time = AAS_Time() + 2.5f;
-                    bc->aistate = Q2AI_BATTLE_NBG;
-                }
             }
             break;
 
@@ -2640,7 +2634,7 @@ static int Q2BotAI(int client, float thinktime)
             if (bc->enemy >= 0)
                 Q2BotAimAndFire(client, bc->enemy, bot_eye);
             /* Check for nearby goals every 1s (Q3 ai_dmnet.c:2429) */
-            if (bc->retreat_check_time < AAS_Time()) {
+            if (!bc->hasnbg && bc->retreat_check_time < AAS_Time()) {
                 bc->retreat_check_time = AAS_Time() + 1.0f;
                 if (BotChooseNBGItem(bc->goalstate, bc->origin,
                                       bc->inventory, TFL_DEFAULT,
