@@ -15,6 +15,7 @@
 #include "bl_spawn.h"
 #include "bl_redirgi.h"
 #include "bl_botcfg.h"
+#include "bl_chat.h"
 
 //#define TOURNEY
 
@@ -386,7 +387,10 @@ int BotLib_BotSetupClient(edict_t *ent, char *userinfo)
 	strncpy(settings.charactername, s, MAX_CHARACTERNAME-1); //Riv++
 	settings.charactername[MAX_CHARACTERNAME-1] = '\0';
 	//
-	return lib->funcs.BotSetupClient(DF_ENTCLIENT(ent), &settings);
+	if (!lib->funcs.BotSetupClient(DF_ENTCLIENT(ent), &settings))
+		return false;
+	BotChat_OnEnterGame(ent);
+	return true;
 } //end of the function BotLib_BotSetupClient
 //==========================================================================
 //
@@ -400,6 +404,8 @@ void BotLib_BotShutdownClient(edict_t *client)
 
 	lib = GetBotLibrary(client);
 	if (!lib) return;
+	if (client->flags & FL_BOT)
+		BotChat_OnExitGame(client);
 	lib->funcs.BotShutdownClient(DF_ENTCLIENT(client));
 } //end of the function BotLib_BotShutDownClient
 //==========================================================================
@@ -665,6 +671,7 @@ void BotLib_BotAI(edict_t *bot, float thinktime)
 	lib = GetBotLibrary(bot);
 	if (!lib) return;
 	lib->funcs.BotAI(DF_ENTCLIENT(bot), thinktime);
+	BotChat_Frame(bot);
 } //end of the function BotLib_BotAI
 //===========================================================================
 //
@@ -825,6 +832,22 @@ void BotLibImport_FreeMemory(void *ptr)
 	gi.TagFree(ptr);
 } //end of the function BotLibImport_FreeMemory
 //===========================================================================
+// CTF/teamplay: check if two entities are on the same team.
+// Wraps Q2's OnSameTeam() for the botlib import table.
+// Entity numbers are 1-indexed (g_edicts[ent]).
+//===========================================================================
+static int BotLibImport_OnSameTeam(int ent1, int ent2)
+{
+	edict_t *e1, *e2;
+	if (ent1 < 1 || ent1 >= game.maxentities) return 0;
+	if (ent2 < 1 || ent2 >= game.maxentities) return 0;
+	e1 = &g_edicts[ent1];
+	e2 = &g_edicts[ent2];
+	if (!e1->inuse || !e2->inuse) return 0;
+	if (!e1->client || !e2->client) return 0;
+	return OnSameTeam(e1, e2);
+} //end of the function BotLibImport_OnSameTeam
+//===========================================================================
 //
 // Parameter:				-
 // Returns:					-
@@ -841,12 +864,13 @@ bsp_trace_t BotLibImport_Trace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t en
 	//just for the errors
 	memset(&bsptrace, 0, sizeof(bsp_trace_t));
 	//check for valid passent entity number
-	if (passent < 0 || passent >= game.maxentities)
+	//-1 means "skip no entity" (used by Q3 botlib code, e.g. be_ai_goal.c)
+	if (passent < -1 || passent >= game.maxentities)
 	{
-		gi.dprintf("BotLibTrace: invalid passent\n");
+		gi.dprintf("BotLibTrace: invalid passent %d\n", passent);
 		return bsptrace;
 	} //end if
-	p = DF_NUMBERENT(passent);
+	p = (passent >= 0) ? DF_NUMBERENT(passent) : NULL;
 	//
 	trace = gi.trace(start, mins, maxs, end, p, contentmask);
 	memcpy(bsptrace.surface.name, trace.surface->name, 16);
@@ -899,6 +923,9 @@ int BotInitLibrary(bot_library_t *lib)
 	//automatically launch WinBSPC if AAS file not available
 	cvar = gi.cvar("autolaunchbspc", "", 0);
 	if (cvar && cvar->value) lib->funcs.BotLibVarSet("autolaunchbspc", "1");
+	//bot skill level (1=beginner, 5=expert)
+	cvar = gi.cvar("bot_skill", "4", 0);
+	if (cvar) lib->funcs.BotLibVarSet("bot_skill", cvar->string);
 	//deathmatch flags
 	lib->funcs.BotLibVarSet("dmflags", dmflags->string);
 	sprintf(buf, "DMFLAGS %s", dmflags->string);
@@ -1215,7 +1242,7 @@ void BotFreeLibrary(bot_library_t *lib)
 void BotLibraryDump(void)
 {
 	bot_library_t *lib;
-	bot_state_t *bs;
+	q2_botclient_t *bs;
 	edict_t *ent;
 	int i;
 
@@ -1333,6 +1360,8 @@ void BotSetupBotLibImport(void)
 	gamebotimport.DebugLineShow = DebugLineShow;				//bl_debug.c
 	//PVS check — engine's inPVS for botlib visibility culling
 	gamebotimport.inPVS = gi.inPVS;
+	//CTF/teamplay team check
+	gamebotimport.OnSameTeam = BotLibImport_OnSameTeam;
 	//
 	memcpy(&botglobals.gamebotimport, &gamebotimport, sizeof(bot_import_t));
 } //end of the function BotSetupLibrary
@@ -1346,8 +1375,8 @@ void BotSetupBotLibImport(void)
 void BotSetup(void)
 {
 	//allocate memory for the bot states
-	botglobals.botstates = (bot_state_t *) gi.TagMalloc(game.maxclients * sizeof(bot_state_t), TAG_GAME);
-	memset(botglobals.botstates, 0, game.maxclients * sizeof(bot_state_t));
+	botglobals.botstates = (q2_botclient_t *) gi.TagMalloc(game.maxclients * sizeof(q2_botclient_t), TAG_GAME);
+	memset(botglobals.botstates, 0, game.maxclients * sizeof(q2_botclient_t));
 	//allocate memory for the bot input
 	botglobals.botinputs = (bot_input_t *) gi.TagMalloc(game.maxclients * sizeof(bot_input_t), TAG_GAME);
 	memset(botglobals.botinputs, 0, game.maxclients * sizeof(bot_input_t));

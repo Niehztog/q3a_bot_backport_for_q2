@@ -281,9 +281,139 @@ qboolean BotDebugCmd(char *cmd, edict_t *ent, int server)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/*
+ * AAS debug console commands.
+ * The visualization functions (AAS_ShowArea, AAS_ShowReachableAreas) come
+ * from Q3's botlib (be_aas_debug.c) and use the debug line infrastructure
+ * from Gladiator's game DLL (bl_debug.c: DebugLineCreate/Show/Delete).
+ *
+ * Q3 had cvars like bot_testsolid and bot_testclusters that showed area
+ * info for the player's current position, but NOT direct "show area N"
+ * or "teleport to area" commands.  These are new convenience commands
+ * that wire Q3's existing debug drawing to user-accessible controls.
+ */
+/* Ensure botlib is loaded for debug commands.  If no bots have been
+ * added yet, load the library on demand (same path as bot spawning). */
+static bot_library_t *BotCmd_EnsureLib(edict_t *ent)
+{
+	bot_library_t *lib = botglobals.firstbotlib;
+	if (!lib) {
+#if defined(WIN32) || defined(_WIN32)
+		lib = BotUseLibrary(gi.cvar("botlib", "botlib.dll", 0)->string);
+#else
+		lib = BotUseLibrary(gi.cvar("botlib", "botlib.so", 0)->string);
+#endif
+	}
+	if (!lib || !lib->funcs.BotLibraryInitialized()) {
+		gi.cprintf(ent, PRINT_HIGH, "botlib failed to load\n");
+		return NULL;
+	}
+	return lib;
+}
+
+static void BotCmd_ShowArea(edict_t *ent)
+{
+	int areanum;
+	bot_library_t *lib = BotCmd_EnsureLib(ent);
+	if (!lib) return;
+	if (gi.argc() < 2) {
+		/* No argument: show area at player's current position */
+		vec3_t pos;
+		VectorCopy(ent->s.origin, pos);
+		areanum = lib->funcs.AAS_PointAreaNum(pos);
+		gi.cprintf(ent, PRINT_HIGH, "current area: %d\n", areanum);
+	} else {
+		areanum = atoi(gi.argv(1));
+	}
+	if (areanum <= 0) {
+		gi.cprintf(ent, PRINT_HIGH, "invalid area %d\n", areanum);
+		return;
+	}
+	lib->funcs.AAS_ShowArea(areanum);
+	gi.cprintf(ent, PRINT_HIGH, "showing area %d\n", areanum);
+}
+
+static void BotCmd_ShowReach(edict_t *ent)
+{
+	int areanum;
+	bot_library_t *lib = BotCmd_EnsureLib(ent);
+	if (!lib) return;
+	if (gi.argc() < 2) {
+		vec3_t pos;
+		VectorCopy(ent->s.origin, pos);
+		areanum = lib->funcs.AAS_PointAreaNum(pos);
+		gi.cprintf(ent, PRINT_HIGH, "current area: %d\n", areanum);
+	} else {
+		areanum = atoi(gi.argv(1));
+	}
+	if (areanum <= 0) {
+		gi.cprintf(ent, PRINT_HIGH, "invalid area %d\n", areanum);
+		return;
+	}
+	lib->funcs.AAS_ShowReachableAreas(areanum);
+	gi.cprintf(ent, PRINT_HIGH, "showing reachabilities from area %d\n", areanum);
+}
+
+static void BotCmd_GotoArea(edict_t *ent)
+{
+	int areanum;
+	bot_library_t *lib = BotCmd_EnsureLib(ent);
+	if (!lib) return;
+	if (gi.argc() < 2) {
+		gi.cprintf(ent, PRINT_HIGH, "usage: bot_gotoarea <areanum>\n");
+		return;
+	}
+	areanum = atoi(gi.argv(1));
+	if (areanum <= 0) {
+		gi.cprintf(ent, PRINT_HIGH, "invalid area %d\n", areanum);
+		return;
+	}
+	{
+		vec3_t center;
+		if (lib->funcs.AAS_AreaCenter(areanum, center)) {
+			VectorCopy(center, ent->s.origin);
+			ent->s.origin[2] += 10; /* slightly above ground */
+			gi.linkentity(ent);
+			gi.cprintf(ent, PRINT_HIGH, "teleported to area %d (%.0f %.0f %.0f)\n",
+			           areanum, center[0], center[1], center[2]);
+		} else {
+			gi.cprintf(ent, PRINT_HIGH, "area %d not found in AAS data\n", areanum);
+		}
+	}
+}
+
+static void BotCmd_ClearDebug(edict_t *ent)
+{
+	bot_library_t *lib = botglobals.firstbotlib;
+	if (!lib || !lib->funcs.BotLibraryInitialized()) return;
+	lib->funcs.AAS_ClearShownDebugLines();
+	gi.cprintf(ent, PRINT_HIGH, "debug lines cleared\n");
+}
+
 qboolean BotServerCmd(char *cmd, edict_t *ent, int server)
 {
-	if (Q_stricmp(cmd, "addbot") == 0)
+	/* AAS debug commands */
+	if (Q_stricmp(cmd, "bot_showarea") == 0)
+	{
+		if (ent) BotCmd_ShowArea(ent);
+		return true;
+	}
+	else if (Q_stricmp(cmd, "bot_showreach") == 0)
+	{
+		if (ent) BotCmd_ShowReach(ent);
+		return true;
+	}
+	else if (Q_stricmp(cmd, "bot_gotoarea") == 0)
+	{
+		if (ent) BotCmd_GotoArea(ent);
+		return true;
+	}
+	else if (Q_stricmp(cmd, "bot_cleardebug") == 0)
+	{
+		if (ent) BotCmd_ClearDebug(ent);
+		return true;
+	}
+	else if (Q_stricmp(cmd, "addbot") == 0)
 	{
 		if (ent && (gi.cvar("serveronlybotcmds", "0", 0))->value)
 		{

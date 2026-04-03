@@ -581,6 +581,13 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 		}
 	}
 	meansOfDeath = mod;
+#ifdef BOT
+	/* Record last attacker for bot chat triggers */
+	if (targ->client) {
+		targ->client->lasthurt_client = (attacker && attacker->client) ? (int)(attacker - g_edicts - 1) : -1;
+		targ->client->lasthurt_mod = mod;
+	}
+#endif
 
 #ifdef ROGUE
 //ROGUE

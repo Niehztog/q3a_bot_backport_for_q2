@@ -32,19 +32,21 @@ typedef struct bot_library_s
 	struct bot_library_s *next;
 } bot_library_t;
 
-//bot state
-typedef struct bot_state_s
+//bot client state (per-client bot management data for Q2)
+//NOTE: renamed from bot_state_t to avoid conflict with Q3's bot_state_t
+//      used by ai_chat.c (defined in ai_chat_q2.h).
+typedef struct q2_botclient_s
 {
 	qboolean active;					//true if a bot is active for this client
 	qboolean started;					//true if the bot has started
 	bot_library_t *library;			//used library by the bot
-} bot_state_t;
+} q2_botclient_t;
 
 //bot globals
 typedef struct bot_globals_s
 {
 	int numbots;						//number of bots
-	bot_state_t *botstates;			//bot states
+	q2_botclient_t *botstates;		//bot states
 	bot_input_t *botinputs;			//bot inputs
 	qboolean *botnewinput;			//array with flags, true if input is new
 	bot_import_t gamebotimport;	//bot library import functions

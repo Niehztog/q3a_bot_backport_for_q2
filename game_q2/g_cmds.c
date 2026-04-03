@@ -5,6 +5,7 @@
 #include "bl_cmd.h"
 #include "bl_main.h"
 #include "bl_redirgi.h"
+#include "bl_chat.h"
 #endif //BOT
 
 #ifdef OBSERVER
@@ -1176,6 +1177,29 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 
 	if (dedicated->value)
 		gi.cprintf(NULL, PRINT_CHAT, "%s", text);
+
+#ifdef BOT
+	/* Notify bots so they can reply.  Skip if sender is a bot. */
+	if (!(ent->flags & FL_BOT)) {
+		/* Extract the raw message by skipping past "Name: " prefix */
+		char *raw_msg = strchr(text, ':');
+		if (raw_msg && raw_msg[1] == ' ')
+			raw_msg += 2;
+		else
+			raw_msg = text;
+		/* Strip trailing newline */
+		{
+			char msgbuf[256];
+			int mlen;
+			strncpy(msgbuf, raw_msg, sizeof(msgbuf) - 1);
+			msgbuf[sizeof(msgbuf) - 1] = '\0';
+			mlen = strlen(msgbuf);
+			if (mlen > 0 && msgbuf[mlen - 1] == '\n')
+				msgbuf[mlen - 1] = '\0';
+			BotChat_OnPlayerSay(ent, msgbuf);
+		}
+	}
+#endif //BOT
 
 	for (j = 1; j <= game.maxclients; j++)
 	{

@@ -4,6 +4,7 @@
 #ifdef BOT
 #include "bl_spawn.h"
 #include "bl_main.h"
+#include "bl_chat.h"
 #endif //BOT
 #ifdef OBSERVER
 #include "p_observer.h"
@@ -977,6 +978,9 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 		LookAtKiller (self, inflictor, attacker);
 		self->client->ps.pmove.pm_type = PM_DEAD;
 		ClientObituary (self, inflictor, attacker);
+#ifdef BOT
+		BotChat_NotifyDeath(self, attacker, meansOfDeath);
+#endif
 #ifdef ZOID
 		if (ctf->value) CTFFragBonuses(self, inflictor, attacker);
 #endif //ZOID

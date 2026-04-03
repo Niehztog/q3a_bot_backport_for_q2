@@ -321,6 +321,8 @@ endif
 # ----------
 
 GAME_OBJS_ = \
+	game_q2/bl_chat.o \
+	game_q3/ai_chat.o \
 	game_q2/bl_cmd.o \
 	game_q2/bl_botcfg.o \
 	game_q2/bl_debug.o \

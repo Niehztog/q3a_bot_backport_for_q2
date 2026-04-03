@@ -31,6 +31,16 @@
 #define MAX_CLIENTSKINNAME		128
 #define MAX_FILEPATH				144
 #define MAX_CHARACTERNAME		144
+#define MAX_MESSAGE_SIZE		256
+
+//console message (matches bot_consolemessage_s in game_q3/be_ai_chat.h)
+typedef struct bot_consolemessage_s {
+	int handle;
+	float time;
+	int type;
+	char message[MAX_MESSAGE_SIZE];
+	struct bot_consolemessage_s *prev, *next;
+} bot_consolemessage_t;
 
 //action flags
 #define ACTION_ATTACK			1
@@ -227,6 +237,37 @@ typedef struct bot_export_s
 	int (*BotConsoleMessage)(int client, int type, char *message);
 	//just for testing
 	int (*Test)(int parm0, char *parm1, vec3_t parm2, vec3_t parm3);
+	//AAS debug visualization
+	void (*AAS_ShowArea)(int areanum);
+	void (*AAS_ShowReachableAreas)(int areanum);
+	void (*AAS_ClearShownDebugLines)(void);
+	int  (*AAS_PointAreaNum)(vec3_t point);
+	int  (*AAS_AreaCenter)(int areanum, vec3_t center);
+	/* Chat functions (Q3 botlib API exposed to game DLL) */
+	void (*BotInitialChatFunc)(int chatstate, char *type, int mcontext,
+			 char *var0, char *var1, char *var2, char *var3,
+			 char *var4, char *var5, char *var6, char *var7);
+	void (*BotEnterChatFunc)(int chatstate, int clientto, int sendto);
+	int  (*BotNumInitialChatsFunc)(int chatstate, char *type);
+	int  (*BotChatLengthFunc)(int chatstate);
+	float (*BotCharacterBFloat)(int character, int index, float min, float max);
+	int  (*BotCharacterBInteger)(int character, int index, int min, int max);
+	/* Death/kill notification (game DLL -> botlib) */
+	void (*BotNotifyDeath)(int client, int killer, int mod);
+	void (*BotNotifyKill)(int client, int victim, int mod);
+	/* Query per-bot handles */
+	int  (*BotGetChatState)(int client);
+	int  (*BotGetCharacter)(int client);
+	int  (*BotGetEnemy)(int client);
+	/* Chat cooldown access */
+	float (*BotGetLastChatTime)(int client);
+	void  (*BotSetLastChatTime)(int client, float time);
+	/* Console message queue (for chat reply) */
+	int  (*BotNextConsoleMessageFunc)(int chatstate, bot_consolemessage_t *cm);
+	int  (*BotReplyChatFunc)(int chatstate, char *message, int mcontext, int vcontext,
+	         char *var0, char *var1, char *var2, char *var3,
+	         char *var4, char *var5, char *var6, char *var7);
+	void (*BotRemoveConsoleMessageFunc)(int chatstate, int handle);
 } bot_export_t;
 
 //bot library imported functions
@@ -250,6 +291,8 @@ typedef struct bot_import_s
 	void		(*DebugLineShow)(int line, vec3_t start, vec3_t end, int color);
 	//PVS check — delegates to engine's PF_inPVS for Q3 botlib visibility culling
 	qboolean	(*inPVS)(vec3_t p1, vec3_t p2);
+	//CTF/teamplay: check if two entities (1-indexed) are on the same team
+	int			(*OnSameTeam)(int ent1, int ent2);
 } bot_import_t;
 
 //linking of bot library

@@ -3,196 +3,205 @@
 //
 // Format: skill <level> { <index> <value> ... }
 //
-// Key characteristic indices (from ioq3/code/game/chars.h):
-//   0  = name (string)
-//   1  = gender (string: "male", "female", "it")
-//   2  = attack_skill [0,1]
-//   3  = weaponweights (string: filename)
-//   4  = view_factor [0,1]
-//   5  = view_maxchange [1,360]
-//   6  = reactiontime [0,5]
-//   7  = aim_accuracy [0,1]
-//  16  = aim_skill [0,1]
-//  21  = chat_file (string: filename)
-//  22  = chat_name (string)
-//  23  = chat_cpm [1,4000]
-//  36  = croucher [0,1]
-//  37  = jumper [0,1]
-//  40  = itemweights (string: filename)
-//  41  = aggression [0,1]
-//  42  = selfpreservation [0,1]
-//  44  = camper [0,1]
-//  45  = easy_fragger [0,1]
-//  46  = alertness [0,1]
-//  47  = firethrottle [0,1]
-//  48  = walker [0,1]
+// Uses chars.h index numbers.  See botfiles/chars.h for full list.
+#include "chars.h"
 
 // Skill level 1 (beginner)
 skill 1
 {
-    0   "DefaultBot"
-    1   "male"
-    2   0.2
-    3   "bots/default_w.c"
-    4   0.5
-    5   90
-    6   1.5
-    7   0.3
-    16  0.2
-    21  "bots/default.c"
-    22  "defaultbot"
-    23  150
-    24  0.1
-    25  0.1
-    26  0.1
-    27  0.1
-    28  0.1
-    29  0.1
-    36  0.2
-    37  0.3
-    38  0.0
-    40  "bots/default_i.c"
-    41  0.3
-    42  0.7
-    44  0.2
-    45  0.5
-    46  0.3
-    47  0.8
-    48  0
+    CHARACTERISTIC_NAME                "DefaultBot"
+    CHARACTERISTIC_GENDER              "male"
+    CHARACTERISTIC_ATTACK_SKILL        0.2
+    CHARACTERISTIC_WEAPONWEIGHTS       "bots/default_w.c"
+    CHARACTERISTIC_VIEW_FACTOR         0.5
+    CHARACTERISTIC_VIEW_MAXCHANGE      90
+    CHARACTERISTIC_REACTIONTIME        1.5
+    CHARACTERISTIC_AIM_ACCURACY        0.3
+    CHARACTERISTIC_AIM_SKILL           0.2
+    CHARACTERISTIC_CHAT_FILE           "bots/default.c"
+    CHARACTERISTIC_CHAT_NAME           "defaultbot"
+    CHARACTERISTIC_CHAT_CPM            150
+    CHARACTERISTIC_CHAT_INSULT         0.1
+    CHARACTERISTIC_CHAT_MISC           0.1
+    CHARACTERISTIC_CHAT_STARTENDLEVEL  0.1
+    CHARACTERISTIC_CHAT_ENTEREXITGAME  0.1
+    CHARACTERISTIC_CHAT_KILL           0.1
+    CHARACTERISTIC_CHAT_DEATH          0.1
+    CHARACTERISTIC_CHAT_ENEMYSUICIDE   0.1
+    CHARACTERISTIC_CHAT_HITTALKING     0.1
+    CHARACTERISTIC_CHAT_HITNODEATH     0.1
+    CHARACTERISTIC_CHAT_HITNOKILL      0.1
+    CHARACTERISTIC_CHAT_RANDOM         0.1
+    CHARACTERISTIC_CHAT_REPLY          0.2
+    CHARACTERISTIC_CROUCHER            0.2
+    CHARACTERISTIC_JUMPER              0.3
+    CHARACTERISTIC_WEAPONJUMPING       0.0
+    CHARACTERISTIC_ITEMWEIGHTS         "bots/default_i.c"
+    CHARACTERISTIC_AGGRESSION          0.3
+    CHARACTERISTIC_SELFPRESERVATION    0.7
+    CHARACTERISTIC_CAMPER              0.2
+    CHARACTERISTIC_EASY_FRAGGER        0.5
+    CHARACTERISTIC_ALERTNESS           0.3
+    CHARACTERISTIC_FIRETHROTTLE        0.8
+    CHARACTERISTIC_WALKER              0
 }
 
 // Skill level 2
 skill 2
 {
-    0   "DefaultBot"
-    1   "male"
-    2   0.4
-    3   "bots/default_w.c"
-    4   0.6
-    5   120
-    6   1.0
-    7   0.5
-    16  0.4
-    21  "bots/default.c"
-    22  "defaultbot"
-    23  150
-    24  0.2
-    25  0.2
-    26  0.2
-    27  0.2
-    28  0.2
-    29  0.2
-    36  0.2
-    37  0.4
-    38  0.2
-    40  "bots/default_i.c"
-    41  0.5
-    42  0.5
-    44  0.1
-    45  0.5
-    46  0.5
-    47  0.7
-    48  0
+    CHARACTERISTIC_NAME                "DefaultBot"
+    CHARACTERISTIC_GENDER              "male"
+    CHARACTERISTIC_ATTACK_SKILL        0.4
+    CHARACTERISTIC_WEAPONWEIGHTS       "bots/default_w.c"
+    CHARACTERISTIC_VIEW_FACTOR         0.6
+    CHARACTERISTIC_VIEW_MAXCHANGE      120
+    CHARACTERISTIC_REACTIONTIME        1.0
+    CHARACTERISTIC_AIM_ACCURACY        0.5
+    CHARACTERISTIC_AIM_SKILL           0.4
+    CHARACTERISTIC_CHAT_FILE           "bots/default.c"
+    CHARACTERISTIC_CHAT_NAME           "defaultbot"
+    CHARACTERISTIC_CHAT_CPM            150
+    CHARACTERISTIC_CHAT_INSULT         0.2
+    CHARACTERISTIC_CHAT_MISC           0.2
+    CHARACTERISTIC_CHAT_STARTENDLEVEL  0.2
+    CHARACTERISTIC_CHAT_ENTEREXITGAME  0.2
+    CHARACTERISTIC_CHAT_KILL           0.2
+    CHARACTERISTIC_CHAT_DEATH          0.2
+    CHARACTERISTIC_CHAT_ENEMYSUICIDE   0.2
+    CHARACTERISTIC_CHAT_HITTALKING     0.2
+    CHARACTERISTIC_CHAT_HITNODEATH     0.2
+    CHARACTERISTIC_CHAT_HITNOKILL      0.2
+    CHARACTERISTIC_CHAT_RANDOM         0.2
+    CHARACTERISTIC_CHAT_REPLY          0.3
+    CHARACTERISTIC_CROUCHER            0.2
+    CHARACTERISTIC_JUMPER              0.4
+    CHARACTERISTIC_WEAPONJUMPING       0.2
+    CHARACTERISTIC_ITEMWEIGHTS         "bots/default_i.c"
+    CHARACTERISTIC_AGGRESSION          0.5
+    CHARACTERISTIC_SELFPRESERVATION    0.5
+    CHARACTERISTIC_CAMPER              0.1
+    CHARACTERISTIC_EASY_FRAGGER        0.5
+    CHARACTERISTIC_ALERTNESS           0.5
+    CHARACTERISTIC_FIRETHROTTLE        0.7
+    CHARACTERISTIC_WALKER              0
 }
 
 // Skill level 3
 skill 3
 {
-    0   "DefaultBot"
-    1   "male"
-    2   0.6
-    3   "bots/default_w.c"
-    4   0.7
-    5   150
-    6   0.7
-    7   0.65
-    16  0.6
-    21  "bots/default.c"
-    22  "defaultbot"
-    23  150
-    24  0.3
-    25  0.3
-    26  0.3
-    27  0.3
-    28  0.3
-    29  0.3
-    36  0.3
-    37  0.5
-    38  0.5
-    40  "bots/default_i.c"
-    41  0.6
-    42  0.4
-    44  0.1
-    45  0.5
-    46  0.6
-    47  0.6
-    48  0
+    CHARACTERISTIC_NAME                "DefaultBot"
+    CHARACTERISTIC_GENDER              "male"
+    CHARACTERISTIC_ATTACK_SKILL        0.6
+    CHARACTERISTIC_WEAPONWEIGHTS       "bots/default_w.c"
+    CHARACTERISTIC_VIEW_FACTOR         0.7
+    CHARACTERISTIC_VIEW_MAXCHANGE      150
+    CHARACTERISTIC_REACTIONTIME        0.7
+    CHARACTERISTIC_AIM_ACCURACY        0.65
+    CHARACTERISTIC_AIM_SKILL           0.6
+    CHARACTERISTIC_CHAT_FILE           "bots/default.c"
+    CHARACTERISTIC_CHAT_NAME           "defaultbot"
+    CHARACTERISTIC_CHAT_CPM            150
+    CHARACTERISTIC_CHAT_INSULT         0.3
+    CHARACTERISTIC_CHAT_MISC           0.3
+    CHARACTERISTIC_CHAT_STARTENDLEVEL  0.3
+    CHARACTERISTIC_CHAT_ENTEREXITGAME  0.3
+    CHARACTERISTIC_CHAT_KILL           0.3
+    CHARACTERISTIC_CHAT_DEATH          0.3
+    CHARACTERISTIC_CHAT_ENEMYSUICIDE   0.3
+    CHARACTERISTIC_CHAT_HITTALKING     0.3
+    CHARACTERISTIC_CHAT_HITNODEATH     0.3
+    CHARACTERISTIC_CHAT_HITNOKILL      0.3
+    CHARACTERISTIC_CHAT_RANDOM         0.3
+    CHARACTERISTIC_CHAT_REPLY          0.4
+    CHARACTERISTIC_CROUCHER            0.3
+    CHARACTERISTIC_JUMPER              0.5
+    CHARACTERISTIC_WEAPONJUMPING       0.5
+    CHARACTERISTIC_ITEMWEIGHTS         "bots/default_i.c"
+    CHARACTERISTIC_AGGRESSION          0.6
+    CHARACTERISTIC_SELFPRESERVATION    0.4
+    CHARACTERISTIC_CAMPER              0.1
+    CHARACTERISTIC_EASY_FRAGGER        0.5
+    CHARACTERISTIC_ALERTNESS           0.6
+    CHARACTERISTIC_FIRETHROTTLE        0.6
+    CHARACTERISTIC_WALKER              0
 }
 
 // Skill level 4
 skill 4
 {
-    0   "DefaultBot"
-    1   "male"
-    2   0.8
-    3   "bots/default_w.c"
-    4   0.8
-    5   180
-    6   0.4
-    7   0.8
-    16  0.8
-    21  "bots/default.c"
-    22  "defaultbot"
-    23  150
-    24  0.4
-    25  0.4
-    26  0.4
-    27  0.4
-    28  0.4
-    29  0.4
-    36  0.4
-    37  0.6
-    38  0.7
-    40  "bots/default_i.c"
-    41  0.7
-    42  0.3
-    44  0.1
-    45  0.6
-    46  0.8
-    47  0.5
-    48  0
+    CHARACTERISTIC_NAME                "DefaultBot"
+    CHARACTERISTIC_GENDER              "male"
+    CHARACTERISTIC_ATTACK_SKILL        0.8
+    CHARACTERISTIC_WEAPONWEIGHTS       "bots/default_w.c"
+    CHARACTERISTIC_VIEW_FACTOR         0.8
+    CHARACTERISTIC_VIEW_MAXCHANGE      180
+    CHARACTERISTIC_REACTIONTIME        0.4
+    CHARACTERISTIC_AIM_ACCURACY        0.8
+    CHARACTERISTIC_AIM_SKILL           0.8
+    CHARACTERISTIC_CHAT_FILE           "bots/default.c"
+    CHARACTERISTIC_CHAT_NAME           "defaultbot"
+    CHARACTERISTIC_CHAT_CPM            150
+    CHARACTERISTIC_CHAT_INSULT         0.4
+    CHARACTERISTIC_CHAT_MISC           0.4
+    CHARACTERISTIC_CHAT_STARTENDLEVEL  0.4
+    CHARACTERISTIC_CHAT_ENTEREXITGAME  0.4
+    CHARACTERISTIC_CHAT_KILL           0.4
+    CHARACTERISTIC_CHAT_DEATH          0.4
+    CHARACTERISTIC_CHAT_ENEMYSUICIDE   0.4
+    CHARACTERISTIC_CHAT_HITTALKING     0.4
+    CHARACTERISTIC_CHAT_HITNODEATH     0.4
+    CHARACTERISTIC_CHAT_HITNOKILL      0.4
+    CHARACTERISTIC_CHAT_RANDOM         0.4
+    CHARACTERISTIC_CHAT_REPLY          0.5
+    CHARACTERISTIC_CROUCHER            0.4
+    CHARACTERISTIC_JUMPER              0.6
+    CHARACTERISTIC_WEAPONJUMPING       0.7
+    CHARACTERISTIC_ITEMWEIGHTS         "bots/default_i.c"
+    CHARACTERISTIC_AGGRESSION          0.7
+    CHARACTERISTIC_SELFPRESERVATION    0.3
+    CHARACTERISTIC_CAMPER              0.1
+    CHARACTERISTIC_EASY_FRAGGER        0.6
+    CHARACTERISTIC_ALERTNESS           0.8
+    CHARACTERISTIC_FIRETHROTTLE        0.5
+    CHARACTERISTIC_WALKER              0
 }
 
 // Skill level 5 (expert)
 skill 5
 {
-    0   "DefaultBot"
-    1   "male"
-    2   0.95
-    3   "bots/default_w.c"
-    4   0.95
-    5   360
-    6   0.2
-    7   0.95
-    16  0.95
-    21  "bots/default.c"
-    22  "defaultbot"
-    23  150
-    24  0.5
-    25  0.5
-    26  0.5
-    27  0.5
-    28  0.5
-    29  0.5
-    36  0.5
-    37  0.7
-    38  1.0
-    40  "bots/default_i.c"
-    41  0.85
-    42  0.2
-    44  0.05
-    45  0.7
-    46  0.95
-    47  0.4
-    48  0
+    CHARACTERISTIC_NAME                "DefaultBot"
+    CHARACTERISTIC_GENDER              "male"
+    CHARACTERISTIC_ATTACK_SKILL        0.95
+    CHARACTERISTIC_WEAPONWEIGHTS       "bots/default_w.c"
+    CHARACTERISTIC_VIEW_FACTOR         0.95
+    CHARACTERISTIC_VIEW_MAXCHANGE      360
+    CHARACTERISTIC_REACTIONTIME        0.2
+    CHARACTERISTIC_AIM_ACCURACY        0.95
+    CHARACTERISTIC_AIM_SKILL           0.95
+    CHARACTERISTIC_CHAT_FILE           "bots/default.c"
+    CHARACTERISTIC_CHAT_NAME           "defaultbot"
+    CHARACTERISTIC_CHAT_CPM            150
+    CHARACTERISTIC_CHAT_INSULT         0.5
+    CHARACTERISTIC_CHAT_MISC           0.5
+    CHARACTERISTIC_CHAT_STARTENDLEVEL  0.5
+    CHARACTERISTIC_CHAT_ENTEREXITGAME  0.5
+    CHARACTERISTIC_CHAT_KILL           0.5
+    CHARACTERISTIC_CHAT_DEATH          0.5
+    CHARACTERISTIC_CHAT_ENEMYSUICIDE   0.5
+    CHARACTERISTIC_CHAT_HITTALKING     0.5
+    CHARACTERISTIC_CHAT_HITNODEATH     0.5
+    CHARACTERISTIC_CHAT_HITNOKILL      0.5
+    CHARACTERISTIC_CHAT_RANDOM         0.5
+    CHARACTERISTIC_CHAT_REPLY          0.6
+    CHARACTERISTIC_CROUCHER            0.5
+    CHARACTERISTIC_JUMPER              0.7
+    CHARACTERISTIC_WEAPONJUMPING       1.0
+    CHARACTERISTIC_ITEMWEIGHTS         "bots/default_i.c"
+    CHARACTERISTIC_AGGRESSION          0.85
+    CHARACTERISTIC_SELFPRESERVATION    0.2
+    CHARACTERISTIC_CAMPER              0.05
+    CHARACTERISTIC_EASY_FRAGGER        0.7
+    CHARACTERISTIC_ALERTNESS           0.95
+    CHARACTERISTIC_FIRETHROTTLE        0.4
+    CHARACTERISTIC_WALKER              0
 }

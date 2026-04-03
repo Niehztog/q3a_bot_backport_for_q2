@@ -90,7 +90,7 @@ void G_FreeClientEdict(edict_t *ent)
 //===========================================================================
 void BotBecome(edict_t *ent, bot_library_t *lib)
 {
-	bot_state_t *bs;
+	q2_botclient_t *bs;
 
 	//remove bot flag before calling ClientConnect to make sure
 	//BotMoveToFreeClientEdict won't be called there
@@ -102,7 +102,7 @@ void BotBecome(edict_t *ent, bot_library_t *lib)
 	//get pointer to the bot state structure
 	bs = &botglobals.botstates[DF_ENTCLIENT(ent)];
 	//clear the bot state
-	memset(bs, 0, sizeof(bot_state_t));
+	memset(bs, 0, sizeof(q2_botclient_t));
 	//set botstate active flag
 	bs->active = true;
 	//pointer to the library used by the bot
@@ -122,7 +122,7 @@ void BotBecome(edict_t *ent, bot_library_t *lib)
 //===========================================================================
 void BotDestroy(edict_t *bot)
 {
-	bot_state_t *bs;
+	q2_botclient_t *bs;
 
 	if (!(bot->flags & FL_BOT)) return;
 	if (!bot->client) return;
@@ -164,7 +164,7 @@ void BotDestroy(edict_t *bot)
 edict_t *BotCreate(char *userinfo, bot_library_t *lib)
 {
 	edict_t *ent;
-	bot_state_t *bs;
+	q2_botclient_t *bs;
 
 	//spawn a client entity
 	ent = G_SpawnClient();
@@ -190,7 +190,7 @@ edict_t *BotCreate(char *userinfo, bot_library_t *lib)
 	//get pointer to the bot state structure
 	bs = &botglobals.botstates[DF_ENTCLIENT(ent)];
 	//clear the bot state
-	memset(bs, 0, sizeof(bot_state_t));
+	memset(bs, 0, sizeof(q2_botclient_t));
 	//set botstate active flag
 	bs->active = true;
 	//pointer to the library used by the bot
@@ -239,7 +239,7 @@ edict_t *BotCreate(char *userinfo, bot_library_t *lib)
 qboolean BotMoveToFreeClientEdict(edict_t *bot)
 {
 	edict_t *newcl;
-	bot_state_t *bs, *newbs;
+	q2_botclient_t *bs, *newbs;
 	int playernum;
 
 	if (!bot->inuse) return true;
@@ -255,7 +255,7 @@ qboolean BotMoveToFreeClientEdict(edict_t *bot)
 	//copy bot state
 	bs = &botglobals.botstates[bot-g_edicts-1];
 	newbs = &botglobals.botstates[newcl-g_edicts-1];
-	memcpy(newbs, bs, sizeof(bot_state_t));
+	memcpy(newbs, bs, sizeof(q2_botclient_t));
 	//old bot state isn't used anymore
 	bs->active = false;
 	//the new state is

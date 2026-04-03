@@ -1443,6 +1443,8 @@ struct gclient_s
 	qboolean showmenu;
 	qboolean showloading;
 	menustate_t menustate;
+	int		lasthurt_client;	// entity number of last attacker (for bot chat)
+	int		lasthurt_mod;		// means of death of last damage received
 #endif //BOT
 
 #ifdef CH

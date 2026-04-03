@@ -4,6 +4,7 @@
 #ifdef BOT
 #include "bl_spawn.h"
 #include "bl_main.h"
+#include "bl_chat.h"
 #include "bl_redirgi.h"
 #endif //BOT
 
@@ -851,6 +852,8 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	BotSpawn();
 	//let the libraries load the map
 	BotLib_BotLoadMap(mapname);
+	//trigger start-level chat for any bots already spawned
+	BotChat_OnStartLevel();
 #endif //BOT
 
 #ifdef ZOID
