@@ -31,16 +31,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 
-#include "g_local.h"
-#include "botlib.h"
-#include "be_aas.h"
-#include "be_ea.h"
-#include "be_ai_char.h"
-#include "be_ai_chat.h"
-#include "be_ai_gen.h"
-#include "be_ai_goal.h"
-#include "be_ai_move.h"
-#include "be_ai_weap.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
 //
 #include "ai_main.h"
 #include "ai_dmq3.h"
@@ -54,8 +48,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "syn.h"				//synonyms
 #include "match.h"				//string matching types and vars
 
-// for the voice chats
-#include "../../ui/menudef.h" // sos001205 - for q3_ui also
+/* Voice-chat VOICECHAT_* constants come from ai_q2_compat.h instead of
+ * MISSIONPACK's ui/menudef.h, which lives outside this repo entirely
+ * ("../../ui/menudef.h" resolved nowhere here -- Q2 has no voice-chat
+ * concept anyway). */
 
 // from aasfile.h
 #define AREACONTENTS_MOVER				1024
@@ -83,7 +79,9 @@ vmCvar_t bot_challenge;
 vmCvar_t bot_predictobstacles;
 vmCvar_t g_spSkill;
 
-extern vmCvar_t bot_developer;
+extern vmCvar_t bot_developer_cvar;	/* see ai_main.c: renamed from bot_developer
+                                         * to avoid colliding with botlib's own,
+                                         * unrelated `extern int bot_developer`. */
 
 vec3_t lastteleport_origin;		//last teleport event origin
 float lastteleport_time;		//last teleport event time
@@ -141,17 +139,28 @@ BotTeam
 ==================
 */
 int BotTeam(bot_state_t *bs) {
-	char info[1024];
 
 	if (bs->client < 0 || bs->client >= MAX_CLIENTS) {
 		//BotAI_Print(PRT_ERROR, "BotCTFTeam: client out of range\n");
 		return false;
 	}
-	trap_GetConfigstring(CS_PLAYERS+bs->client, info, sizeof(info));
-	//
-	if (atoi(Info_ValueForKey(info, "t")) == TEAM_RED) return TEAM_RED;
-	else if (atoi(Info_ValueForKey(info, "t")) == TEAM_BLUE) return TEAM_BLUE;
-	return TEAM_FREE;
+	/*
+	 * Q2 port fix (Phase 2): this used to call
+	 * trap_GetConfigstring(CS_PLAYERS+bs->client,...) and parse the "t" key
+	 * out of the result -- but trap_GetConfigstring is a permanent stub in
+	 * this port (the frozen game<->botlib ABI has no configstring-fetch
+	 * entry at all; confirmed against game_q2/botlib.h and
+	 * botlib/ai_q2_shim.c), so it always wrote an empty string and this
+	 * function always returned TEAM_FREE for every bot, silently disabling
+	 * all CTF team-relative logic. Fixed by reading bs->q2_realctfteam
+	 * instead: botlib/be_interface_q2.c's Q2BotUpdateClient derives it
+	 * every frame from Q2's own STAT_CTF_JOINED_TEAM1_PIC/TEAM2_PIC stats
+	 * (game_q2/g_ctf.c's SetCTFStats(), which mirrors the real
+	 * gclient_t->resp.ctf_team) -- see the report for why this is a
+	 * correctly-labeled real signal (verified against game_q2/g_ctf.c and
+	 * g_items.c), not a guess or an arbitrary-but-consistent heuristic.
+	 */
+	return bs->q2_realctfteam;
 }
 
 /*
@@ -1592,7 +1601,17 @@ void BotSetupForMovement(bot_state_t *bs) {
 	VectorCopy(bs->cur_ps.velocity, initmove.velocity);
 	VectorClear(initmove.viewoffset);
 	initmove.viewoffset[2] += bs->cur_ps.viewheight;
-	initmove.entitynum = bs->entitynum;
+	/* Q2 port fix: bot_initmove_t deliberately keeps "entity number of the
+	 * bot" (entitynum) distinct from "client number of the bot" (client,
+	 * see be_ai_move.h) -- botlib/be_ai_move.c uses ms->entitynum for
+	 * self-exclusion in real Q2-native traces (AAS_Trace/AAS_TraceClientBBox,
+	 * which reach botimport.Trace/the AAS entity database) and ms->client
+	 * only for EA_* calls and debug prints. bs->entitynum is a plain Q3-style
+	 * client number here (ai_main.c sets it equal to bs->client), so it must
+	 * be translated to a real Q2 entity number before being stored as
+	 * initmove.entitynum; initmove.client stays untranslated since EA_*'s
+	 * own per-client state array is indexed the Q3 way. */
+	initmove.entitynum = Q2_ClientNumToEntityNum(bs->entitynum);
 	initmove.client = bs->client;
 	initmove.thinktime = bs->thinktime;
 	//set the onground flag
@@ -1715,76 +1734,33 @@ void BotCheckItemPickup(bot_state_t *bs, int *oldinventory) {
 BotUpdateInventory
 ==================
 */
+/*
+ * Q2-native replacement (see the plan's design-decision section):
+ * real Q3's body above read bs->cur_ps.stats[STAT_WEAPONS] (a weapon
+ * bitmask) plus .ammo[]/.powerups[] arrays, none of which Q2 populates
+ * (Q2 has no such concepts in its player state). Q2's own per-client
+ * inventory array already shares the exact same slot numbering as
+ * assets/botfiles/inv.h's INVENTORY_* constants (confirmed against
+ * game_q2/g_items.c's real itemlist[] indices) -- botlib/be_interface_q2.c's
+ * Q2BotUpdateClient copies it straight into bs->inventory[] every frame,
+ * before this function runs (game DLL frame order: BotUpdateClient always
+ * precedes BotAI for the same client -- confirmed against
+ * game_q2/g_main.c), together with the two scalar stats (health, armor)
+ * Q2 tracks outside the inventory array. Nothing is left to translate
+ * here.
+ *
+ * NOTE: assets/botfiles/inv.h's own INVENTORY_ARMOR_JACKET/COMBAT/BODY/
+ * SHARD values (32-35) do NOT actually match g_items.c's real armor
+ * pickup indices (verified: real armor items are at indices 1-4;
+ * 32-35 are Rogue mission-pack key items) -- a pre-existing inv.h bug,
+ * not introduced here and not fixed here (out of scope; harmless for
+ * this straight-copy design since indices flow through unchanged
+ * regardless of what name any given slot has. Flagged in the report).
+ */
 void BotUpdateInventory(bot_state_t *bs) {
 	int oldinventory[MAX_ITEMS];
 
 	memcpy(oldinventory, bs->inventory, sizeof(oldinventory));
-	//armor
-	bs->inventory[INVENTORY_ARMOR] = bs->cur_ps.stats[STAT_ARMOR];
-	//weapons
-	bs->inventory[INVENTORY_GAUNTLET] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GAUNTLET)) != 0;
-	bs->inventory[INVENTORY_SHOTGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_SHOTGUN)) != 0;
-	bs->inventory[INVENTORY_MACHINEGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_MACHINEGUN)) != 0;
-	bs->inventory[INVENTORY_GRENADELAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GRENADE_LAUNCHER)) != 0;
-	bs->inventory[INVENTORY_ROCKETLAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_ROCKET_LAUNCHER)) != 0;
-	bs->inventory[INVENTORY_LIGHTNING] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_LIGHTNING)) != 0;
-	bs->inventory[INVENTORY_RAILGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_RAILGUN)) != 0;
-	bs->inventory[INVENTORY_PLASMAGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_PLASMAGUN)) != 0;
-	bs->inventory[INVENTORY_BFG10K] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_BFG)) != 0;
-	bs->inventory[INVENTORY_GRAPPLINGHOOK] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GRAPPLING_HOOK)) != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NAILGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_NAILGUN)) != 0;;
-	bs->inventory[INVENTORY_PROXLAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_PROX_LAUNCHER)) != 0;;
-	bs->inventory[INVENTORY_CHAINGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_CHAINGUN)) != 0;;
-#endif
-	//ammo
-	bs->inventory[INVENTORY_SHELLS] = bs->cur_ps.ammo[WP_SHOTGUN];
-	bs->inventory[INVENTORY_BULLETS] = bs->cur_ps.ammo[WP_MACHINEGUN];
-	bs->inventory[INVENTORY_GRENADES] = bs->cur_ps.ammo[WP_GRENADE_LAUNCHER];
-	bs->inventory[INVENTORY_CELLS] = bs->cur_ps.ammo[WP_PLASMAGUN];
-	bs->inventory[INVENTORY_LIGHTNINGAMMO] = bs->cur_ps.ammo[WP_LIGHTNING];
-	bs->inventory[INVENTORY_ROCKETS] = bs->cur_ps.ammo[WP_ROCKET_LAUNCHER];
-	bs->inventory[INVENTORY_SLUGS] = bs->cur_ps.ammo[WP_RAILGUN];
-	bs->inventory[INVENTORY_BFGAMMO] = bs->cur_ps.ammo[WP_BFG];
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NAILS] = bs->cur_ps.ammo[WP_NAILGUN];
-	bs->inventory[INVENTORY_MINES] = bs->cur_ps.ammo[WP_PROX_LAUNCHER];
-	bs->inventory[INVENTORY_BELT] = bs->cur_ps.ammo[WP_CHAINGUN];
-#endif
-	//powerups
-	bs->inventory[INVENTORY_HEALTH] = bs->cur_ps.stats[STAT_HEALTH];
-	bs->inventory[INVENTORY_TELEPORTER] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_TELEPORTER;
-	bs->inventory[INVENTORY_MEDKIT] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_MEDKIT;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_KAMIKAZE] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_KAMIKAZE;
-	bs->inventory[INVENTORY_PORTAL] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_PORTAL;
-	bs->inventory[INVENTORY_INVULNERABILITY] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_INVULNERABILITY;
-#endif
-	bs->inventory[INVENTORY_QUAD] = bs->cur_ps.powerups[PW_QUAD] != 0;
-	bs->inventory[INVENTORY_ENVIRONMENTSUIT] = bs->cur_ps.powerups[PW_BATTLESUIT] != 0;
-	bs->inventory[INVENTORY_HASTE] = bs->cur_ps.powerups[PW_HASTE] != 0;
-	bs->inventory[INVENTORY_INVISIBILITY] = bs->cur_ps.powerups[PW_INVIS] != 0;
-	bs->inventory[INVENTORY_REGEN] = bs->cur_ps.powerups[PW_REGEN] != 0;
-	bs->inventory[INVENTORY_FLIGHT] = bs->cur_ps.powerups[PW_FLIGHT] != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_SCOUT] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_SCOUT;
-	bs->inventory[INVENTORY_GUARD] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_GUARD;
-	bs->inventory[INVENTORY_DOUBLER] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_DOUBLER;
-	bs->inventory[INVENTORY_AMMOREGEN] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_AMMOREGEN;
-#endif
-	bs->inventory[INVENTORY_REDFLAG] = bs->cur_ps.powerups[PW_REDFLAG] != 0;
-	bs->inventory[INVENTORY_BLUEFLAG] = bs->cur_ps.powerups[PW_BLUEFLAG] != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NEUTRALFLAG] = bs->cur_ps.powerups[PW_NEUTRALFLAG] != 0;
-	if (BotTeam(bs) == TEAM_RED) {
-		bs->inventory[INVENTORY_REDCUBE] = bs->cur_ps.generic1;
-		bs->inventory[INVENTORY_BLUECUBE] = 0;
-	}
-	else {
-		bs->inventory[INVENTORY_REDCUBE] = 0;
-		bs->inventory[INVENTORY_BLUECUBE] = bs->cur_ps.generic1;
-	}
-#endif
 	BotCheckItemPickup(bs, oldinventory);
 }
 
@@ -2641,7 +2617,13 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 	//
 	if (bs->attackchase_time > FloatTime()) {
 		//create the chase goal
-		goal.entitynum = attackentity;
+		/* Q2 port fix: this goal is fed to trap_BotMoveToGoal/
+		 * trap_BotMovementViewTarget, whose real (botlib-internal)
+		 * implementations dereference goal->entitynum as a genuine Q2
+		 * entity number (e.g. BotVisible's self-exclusion trace) -- like
+		 * every other bot_goal_t.entitynum in these files, it must hold a
+		 * translated, native value, not the raw client number. */
+		goal.entitynum = Q2_ClientNumToEntityNum(attackentity);
 		goal.areanum = bs->lastenemyareanum;
 		VectorCopy(bs->lastenemyorigin, goal.origin);
 		VectorSet(goal.mins, -8, -8, -8);
@@ -2765,8 +2747,17 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 BotSameTeam
 ==================
 */
+/* Q2 port fix (Phase 2): wraps the already-existing, already-wired
+ * q2_bot_import_t.OnSameTeam callback (frozen ABI; delegates to
+ * game_q2/g_cmds.c's real OnSameTeam(), which compares the real
+ * gclient_t->resp.ctf_team of two entities) -- see
+ * botlib/be_interface_q2.c for the implementation and the report for why
+ * this needed no new ABI surface. Declared here directly (like this
+ * file's other trap_/Q2-side externs) rather than via a header, since it
+ * is a botlib.so-internal accessor, not part of any Q3-shaped API. */
+extern int Q2_ClientsOnSameTeam(int client1, int client2);
+
 int BotSameTeam(bot_state_t *bs, int entnum) {
-	char info1[1024], info2[1024];
 
 	if (bs->client < 0 || bs->client >= MAX_CLIENTS) {
 		//BotAI_Print(PRT_ERROR, "BotSameTeam: client out of range\n");
@@ -2777,10 +2768,20 @@ int BotSameTeam(bot_state_t *bs, int entnum) {
 		return false;
 	}
 	if ( gametype >= GT_TEAM ) {
-		trap_GetConfigstring(CS_PLAYERS+bs->client, info1, sizeof(info1));
-		trap_GetConfigstring(CS_PLAYERS+entnum, info2, sizeof(info2));
-		//
-		if (atoi(Info_ValueForKey(info1, "t")) == atoi(Info_ValueForKey(info2, "t"))) return true;
+		/*
+		 * Q2 port fix (Phase 2): this used to fetch and parse two
+		 * trap_GetConfigstring(CS_PLAYERS+...) strings -- a permanent stub
+		 * in this port (see BotTeam() above and the report), so info1 and
+		 * info2 were always identical empty strings, making this ALWAYS
+		 * return true for every pair of entities in every team-based game.
+		 * Since every BotFindEnemy-family caller uses this as a
+		 * skip-if-teammate filter, bots found precisely ZERO enemies in
+		 * CTF or Team Deathmatch -- a strictly worse failure than
+		 * BotTeam()'s misdirection, and likely the more noticeable of the
+		 * two on first real CTF testing. Fixed by delegating to Q2's own
+		 * OnSameTeam() via Q2_ClientsOnSameTeam() (see above).
+		 */
+		return Q2_ClientsOnSameTeam(bs->client, entnum);
 	}
 	return false;
 }
@@ -2881,7 +2882,13 @@ float BotEntityVisible(int viewer, vec3_t eye, vec3_t viewangles, float fov, int
 			}
 		}
 		//if a full trace or the hitent was hit
-		if (trace.fraction >= 1 || trace.ent == hitent) {
+		/* Q2 port fix: trace.ent is a genuine Q2 entity number (this trace
+		 * went through BotAI_Trace/botimport.Trace for real); hitent is
+		 * still a Q3-style client number (copied from viewer/ent, both
+		 * plain client numbers) -- translate it for this comparison.
+		 * passent above needs no such translation: it flows into
+		 * BotAI_Trace, which already does the same translation itself. */
+		if (trace.fraction >= 1 || trace.ent == Q2_ClientNumToEntityNum(hitent)) {
 			//check for fog, assuming there's only one fog brush where
 			//either the viewer or the entity is in or both are in
 			otherinfog = (trap_AAS_PointContents(middle) & CONTENTS_FOG);
@@ -2987,7 +2994,13 @@ int BotFindEnemy(bot_state_t *bs, int curenemy) {
 		//
 		if (!entinfo.valid) continue;
 		//if the enemy isn't dead and the enemy isn't the bot self
-		if (EntityIsDead(&entinfo) || entinfo.number == bs->entitynum) continue;
+		/* Q2 port fix: entinfo.number is a real, translated Q2 entity
+		 * number (BotEntityInfo now translates its query); bs->entitynum
+		 * is still the plain client number ai_main.c sets it to --
+		 * translate it so this self-skip actually works (it is otherwise
+		 * redundant with the `i == bs->client` check just above, but keep
+		 * it correct/consistent regardless). */
+		if (EntityIsDead(&entinfo) || entinfo.number == Q2_ClientNumToEntityNum(bs->entitynum)) continue;
 		//if the enemy is invisible and not shooting
 		if (EntityIsInvisible(&entinfo) && !EntityIsShooting(&entinfo)) {
 			continue;
@@ -3035,7 +3048,16 @@ int BotFindEnemy(bot_state_t *bs, int curenemy) {
 			}
 		}
 		//found an enemy
-		bs->enemy = entinfo.number;
+		/* Q2 port fix (reverse direction): bs->enemy is a Q3-style client
+		 * number everywhere else in these files (compared against
+		 * bs->client, fed back into the now-translating BotEntityInfo/
+		 * BotAI_Trace, etc.) -- assign the loop variable i (the client
+		 * number this iteration is scanning), not entinfo.number, which is
+		 * now a real, translated Q2 entity number (echoed back by
+		 * AAS_EntityInfo) and would corrupt bs->enemy by one client-slot.
+		 * Matches the sibling scan functions below (BotTeamFlagCarrier
+		 * etc.), which already correctly `return i;`. */
+		bs->enemy = i;
 		if (curenemy >= 0) bs->enemysight_time = FloatTime() - 2;
 		else bs->enemysight_time = FloatTime();
 		bs->enemysuicide = false;
@@ -3413,7 +3435,11 @@ void BotAimAtEnemy(bot_state_t *bs) {
 					//
 					VectorClear(cmdmove);
 					//AAS_ClearShownDebugLines();
-					trap_AAS_PredictClientMovement(&move, bs->enemy, origin,
+					/* Q2 port fix: AAS_PredictClientMovement's entnum feeds
+					 * the same real-trace self-exclusion machinery as
+					 * ms->entitynum (botlib/be_aas_move.c) -- translate the
+					 * client number to a real Q2 entity number. */
+					trap_AAS_PredictClientMovement(&move, Q2_ClientNumToEntityNum(bs->enemy), origin,
 														PRESENCE_CROUCH, false,
 														dir, cmdmove, 0,
 														dist * 10 / wi.speed, 0.1f, 0, 0, false);
@@ -3443,7 +3469,13 @@ void BotAimAtEnemy(bot_state_t *bs) {
 				//try to aim at the ground in front of the enemy
 				VectorCopy(entinfo.origin, end);
 				end[2] -= 64;
-				BotAI_Trace(&trace, entinfo.origin, NULL, NULL, end, entinfo.number, MASK_SHOT);
+				/* Q2 port fix: pass bs->enemy (a Q3-style client number,
+				 * which BotAI_Trace now translates itself), not
+				 * entinfo.number -- entinfo.number is already a real Q2
+				 * entity number (entinfo is bs->enemy's own entity info,
+				 * fetched above via the already-translating BotEntityInfo),
+				 * and would get shifted a second time otherwise. */
+				BotAI_Trace(&trace, entinfo.origin, NULL, NULL, end, bs->enemy, MASK_SHOT);
 				//
 				VectorCopy(bestorigin, groundtarget);
 				if (trace.startsolid) groundtarget[2] = entinfo.origin[2] - 16;
@@ -3460,7 +3492,9 @@ void BotAimAtEnemy(bot_state_t *bs) {
 						if (VectorLengthSquared(dir) > Square(100)) {
 							//check if the bot is visible from the ground target
 							trace.endpos[2] += 1;
-							BotAI_Trace(&trace, trace.endpos, NULL, NULL, entinfo.origin, entinfo.number, MASK_SHOT);
+							/* Q2 port fix: see the identical note above --
+							 * bs->enemy, not entinfo.number. */
+							BotAI_Trace(&trace, trace.endpos, NULL, NULL, entinfo.origin, bs->enemy, MASK_SHOT);
 							if (trace.fraction >= 1) {
 								//botimport.Print(PRT_MESSAGE, "%1.1f aiming at ground\n", AAS_Time());
 								VectorCopy(groundtarget, bestorigin);
@@ -3485,7 +3519,11 @@ void BotAimAtEnemy(bot_state_t *bs) {
 				wi.number == WP_ROCKET_LAUNCHER ||
 				wi.number == WP_GRENADE_LAUNCHER) {
 				//create the chase goal
-				goal.entitynum = bs->client;
+				/* Q2 port fix: same as BotAttackMove's chase goal -- this
+				 * feeds trap_BotPredictVisiblePosition (botlib-internal,
+				 * treats entitynum as a real Q2 entity number), so
+				 * translate the client number here too. */
+				goal.entitynum = Q2_ClientNumToEntityNum(bs->client);
 				goal.areanum = bs->areanum;
 				VectorCopy(bs->eye, goal.origin);
 				VectorSet(goal.mins, -8, -8, -8);
@@ -3617,7 +3655,10 @@ void BotCheckAttack(bot_state_t *bs) {
 	if (!InFieldOfVision(bs->viewangles, fov, angles))
 		return;
 	BotAI_Trace(&bsptrace, bs->eye, NULL, NULL, bs->aimtarget, bs->client, CONTENTS_SOLID|CONTENTS_PLAYERCLIP);
-	if (bsptrace.fraction < 1 && bsptrace.ent != attackentity)
+	/* Q2 port fix: bsptrace.ent is a real Q2 entity number; attackentity is
+	 * still the plain client number copied from bs->enemy above -- translate
+	 * it for this comparison (and the trace.ent comparisons below). */
+	if (bsptrace.fraction < 1 && bsptrace.ent != Q2_ClientNumToEntityNum(attackentity))
 		return;
 
 	//get the weapon info
@@ -3636,14 +3677,18 @@ void BotCheckAttack(bot_state_t *bs) {
 	BotAI_Trace(&trace, start, mins, maxs, end, bs->entitynum, MASK_SHOT);
 	//if the entity is a client
 	if (trace.ent > 0 && trace.ent <= MAX_CLIENTS) {
-		if (trace.ent != attackentity) {
+		if (trace.ent != Q2_ClientNumToEntityNum(attackentity)) {
 			//if a teammate is hit
-			if (BotSameTeam(bs, trace.ent))
+			/* Q2 port fix: BotSameTeam's entnum parameter expects a plain
+			 * client number (see Q2_ClientsOnSameTeam/be_interface_q2.c),
+			 * but trace.ent here is a real, already-native Q2 entity
+			 * number -- translate it back before calling BotSameTeam. */
+			if (BotSameTeam(bs, Q2_EntityNumToClientNum(trace.ent)))
 				return;
 		}
 	}
 	//if won't hit the enemy or not attacking a player (obelisk)
-	if (trace.ent != attackentity || attackentity >= MAX_CLIENTS) {
+	if (trace.ent != Q2_ClientNumToEntityNum(attackentity) || attackentity >= MAX_CLIENTS) {
 		//if the projectile does radial damage
 		if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
 			if (trace.fraction * 1000 < wi.proj.radius) {
@@ -3708,7 +3753,13 @@ void BotMapScripts(bot_state_t *bs) {
 			//
 			if (!entinfo.valid) continue;
 			//if the enemy isn't dead and the enemy isn't the bot self
-			if (EntityIsDead(&entinfo) || entinfo.number == bs->entitynum) continue;
+			/* Q2 port fix: entinfo.number is a real, translated Q2 entity
+		 * number (BotEntityInfo now translates its query); bs->entitynum
+		 * is still the plain client number ai_main.c sets it to --
+		 * translate it so this self-skip actually works (it is otherwise
+		 * redundant with the `i == bs->client` check just above, but keep
+		 * it correct/consistent regardless). */
+		if (EntityIsDead(&entinfo) || entinfo.number == Q2_ClientNumToEntityNum(bs->entitynum)) continue;
 			//
 			if (entinfo.origin[0] > mins[0] && entinfo.origin[0] < maxs[0]) {
 				if (entinfo.origin[1] > mins[1] && entinfo.origin[1] < maxs[1]) {
@@ -3773,30 +3824,42 @@ void BotSetMovedir(vec3_t angles, vec3_t movedir) {
 ==================
 BotModelMinsMaxs
 
-this is ugly
+Rewritten to scan via AAS_EntityInfo/AAS_NextEntity instead of a direct
+g_entities[]/level.num_entities scan, which botlib.so has no access to
+across the frozen game<->botlib ABI (verified clean substitution, per the
+plan: game_q2/bl_main.c's BotLib_BotUpdateEntity already sends mins/maxs
+origin-relative -- the exact convention aas_entityinfo_t.mins/maxs ends up
+holding, since Q2BotUpdateEntity copies them through unchanged -- so this
+function's own VectorAdd(origin, mins/maxs) still does the local-to-
+absolute conversion real Q3's g_entities[]-based version did; mover
+modelindex numbering already matches via be_interface_q2.c's
+`state.modelindex = bue->modelindex - 1` adjustment).
+
+There is no raw BSP contents mask in aas_entityinfo_t (it carries only
+.solid, an int using Q2's SOLID_* convention -- see Q2BotUpdateEntity).
+Both of this function's only two real call shapes (grep-verified: always
+either `(modelindex, ET_MOVER, 0, ...)` or `(modelindex, 0, CONTENTS_TRIGGER,
+...)`, never both filters at once) translate cleanly: ET_MOVER -> .type,
+CONTENTS_TRIGGER -> .solid==1 (Q2 SOLID_TRIGGER).
 ==================
 */
 int BotModelMinsMaxs(int modelindex, int eType, int contents, vec3_t mins, vec3_t maxs) {
-	gentity_t *ent;
-	int i;
+	int ent;
+	aas_entityinfo_t info;
 
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
+	for (ent = trap_AAS_NextEntity(0); ent; ent = trap_AAS_NextEntity(ent)) {
+		trap_AAS_EntityInfo(ent, &info);
+		if (!info.valid) continue;
+		if (eType && info.type != eType) continue;
+		if (contents) {
+			if (contents == CONTENTS_TRIGGER && info.solid != 1 /* Q2 SOLID_TRIGGER */) continue;
+			if (contents == CONTENTS_SOLID && info.solid != 3 /* Q2 SOLID_BSP */) continue;
+			if (contents != CONTENTS_TRIGGER && contents != CONTENTS_SOLID) continue;
 		}
-		if ( eType && ent->s.eType != eType) {
-			continue;
-		}
-		if ( contents && ent->r.contents != contents) {
-			continue;
-		}
-		if (ent->s.modelindex == modelindex) {
-			if (mins)
-				VectorAdd(ent->r.currentOrigin, ent->r.mins, mins);
-			if (maxs)
-				VectorAdd(ent->r.currentOrigin, ent->r.maxs, maxs);
-			return i;
+		if (info.modelindex == modelindex) {
+			if (mins) VectorAdd(info.origin, info.mins, mins);
+			if (maxs) VectorAdd(info.origin, info.maxs, maxs);
+			return ent;
 		}
 	}
 	if (mins)
@@ -4243,7 +4306,7 @@ int BotGetActivateGoal(bot_state_t *bs, int entitynum, bot_activategoal_t *activ
 	}
 	// get the targetname so we can find an entity with a matching target
 	if (!trap_AAS_ValueForBSPEpairKey(ent, "targetname", targetname[0], sizeof(targetname[0]))) {
-		if (bot_developer.integer) {
+		if (bot_developer_cvar.integer) {
 			BotAI_Print(PRT_ERROR, "BotGetActivateGoal: entity with model \"%s\" has no targetname\n", model);
 		}
 		return 0;
@@ -4259,14 +4322,14 @@ int BotGetActivateGoal(bot_state_t *bs, int entitynum, bot_activategoal_t *activ
 			}
 		}
 		if (!ent) {
-			if (bot_developer.integer) {
+			if (bot_developer_cvar.integer) {
 				BotAI_Print(PRT_ERROR, "BotGetActivateGoal: no entity with target \"%s\"\n", targetname[i]);
 			}
 			i--;
 			continue;
 		}
 		if (!trap_AAS_ValueForBSPEpairKey(ent, "classname", classname, sizeof(classname))) {
-			if (bot_developer.integer) {
+			if (bot_developer_cvar.integer) {
 				BotAI_Print(PRT_ERROR, "BotGetActivateGoal: entity with target \"%s\" has no classname\n", targetname[i]);
 			}
 			continue;
@@ -4446,7 +4509,18 @@ void BotAIBlocked(bot_state_t *bs, bot_moveresult_t *moveresult, int activate) {
 		return;
 	}
 	// get info for the entity that is blocking the bot
-	BotEntityInfo(moveresult->blockentity, &entinfo);
+	/* Q2 port fix (reverse direction): moveresult->blockentity is already
+	 * a genuine Q2 entity number -- botlib/be_ai_move.c sets it either from
+	 * a real trace's .ent (BotCheckBlocked, which can legitimately be a
+	 * low-numbered player edict if another player is blocking the bot) or
+	 * from an AAS entity scan (BotOnTopOfEntity, movers). Bypass
+	 * BotEntityInfo's client->entity translation here -- calling it would
+	 * double-translate an already-native player edict number and fetch
+	 * the wrong client's info -- and call the untranslated real AAS
+	 * function directly instead, exactly like this file's other
+	 * already-native entitynum consumers (goal->entitynum from
+	 * BotModelMinsMaxs/BotGetLevelItemGoal). */
+	trap_AAS_EntityInfo(moveresult->blockentity, &entinfo);
 #ifdef OBSTACLEDEBUG
 	ClientName(bs->client, netname, sizeof(netname));
 	BotAI_Print(PRT_MESSAGE, "%s: I'm blocked by model %d\n", netname, entinfo.modelindex);
@@ -4701,17 +4775,13 @@ void BotCheckConsoleMessages(bot_state_t *bs) {
 }
 
 /*
-==================
-BotCheckEvents
-==================
-*/
-void BotCheckForGrenades(bot_state_t *bs, entityState_t *state) {
-	// if this is not a grenade
-	if (state->eType != ET_MISSILE || state->weapon != WP_GRENADE_LAUNCHER)
-		return;
-	// try to avoid the grenade
-	trap_BotAddAvoidSpot(bs->ms, state->pos.trBase, 160, AVOID_ALWAYS);
-}
+ * BotCheckForGrenades was removed here: it needs full entityState_t data
+ * (state->eType/weapon) fed by a Q3 snapshot-entity loop this Q2 port has
+ * no equivalent for. Grenade avoidance is preserved -- ported to scan via
+ * AAS_NextEntity/AAS_EntityInfo instead, in botlib/be_interface_q2.c's
+ * Q2BotCheckGrenades, called from Q2BotAI just before this same frame's
+ * BotAI() (see the report). BotCheckSnapshot below no longer calls this.
+ */
 
 #ifdef MISSIONPACK
 /*
@@ -4759,251 +4829,24 @@ void BotCheckForKamikazeBody(bot_state_t *bs, entityState_t *state) {
 #endif
 
 /*
-==================
-BotCheckEvents
-==================
-*/
-void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
-	int event;
-	char buf[128];
-#ifdef MISSIONPACK
-	aas_entityinfo_t entinfo;
-#endif
-
-	//NOTE: this sucks, we're accessing the gentity_t directly
-	//but there's no other fast way to do it right now
-	if (bs->entityeventTime[state->number] == g_entities[state->number].eventTime) {
-		return;
-	}
-	bs->entityeventTime[state->number] = g_entities[state->number].eventTime;
-	//if it's an event only entity
-	if (state->eType > ET_EVENTS) {
-		event = (state->eType - ET_EVENTS) & ~EV_EVENT_BITS;
-	}
-	else {
-		event = state->event & ~EV_EVENT_BITS;
-	}
-	//
-	switch(event) {
-		//client obituary event
-		case EV_OBITUARY:
-		{
-			int target, attacker, mod;
-
-			target = state->otherEntityNum;
-			attacker = state->otherEntityNum2;
-			mod = state->eventParm;
-			//
-			if (target == bs->client) {
-				bs->botdeathtype = mod;
-				bs->lastkilledby = attacker;
-				//
-				if (target == attacker ||
-					target == ENTITYNUM_NONE ||
-					target == ENTITYNUM_WORLD) bs->botsuicide = true;
-				else bs->botsuicide = false;
-				//
-				bs->num_deaths++;
-			}
-			//else if this client was killed by the bot
-			else if (attacker == bs->client) {
-				bs->enemydeathtype = mod;
-				bs->lastkilledplayer = target;
-				bs->killedenemy_time = FloatTime();
-				//
-				bs->num_kills++;
-			}
-			else if (attacker == bs->enemy && target == attacker) {
-				bs->enemysuicide = true;
-			}
-			//
-#ifdef MISSIONPACK			
-			if (gametype == GT_1FCTF) {
-				//
-				BotEntityInfo(target, &entinfo);
-				if ( entinfo.powerups & ( 1 << PW_NEUTRALFLAG ) ) {
-					if (!BotSameTeam(bs, target)) {
-						bs->neutralflagstatus = 3;	//enemy dropped the flag
-						bs->flagstatuschanged = true;
-					}
-				}
-			}
-#endif
-			break;
-		}
-		case EV_GLOBAL_SOUND:
-		{
-			if (state->eventParm < 0 || state->eventParm > MAX_SOUNDS) {
-				BotAI_Print(PRT_ERROR, "EV_GLOBAL_SOUND: eventParm (%d) out of range\n", state->eventParm);
-				break;
-			}
-			trap_GetConfigstring(CS_SOUNDS + state->eventParm, buf, sizeof(buf));
-			/*
-			if (!strcmp(buf, "sound/teamplay/flagret_red.wav")) {
-				//red flag is returned
-				bs->redflagstatus = 0;
-				bs->flagstatuschanged = true;
-			}
-			else if (!strcmp(buf, "sound/teamplay/flagret_blu.wav")) {
-				//blue flag is returned
-				bs->blueflagstatus = 0;
-				bs->flagstatuschanged = true;
-			}
-			else*/
-#ifdef MISSIONPACK
-			if (!strcmp(buf, "sound/items/kamikazerespawn.wav" )) {
-				//the kamikaze respawned so dont avoid it
-				BotDontAvoid(bs, "Kamikaze");
-			}
-			else
-#endif
-				if (!strcmp(buf, "sound/items/poweruprespawn.wav")) {
-				//powerup respawned... go get it
-				BotGoForPowerups(bs);
-			}
-			break;
-		}
-		case EV_GLOBAL_TEAM_SOUND:
-		{
-			if (gametype == GT_CTF) {
-				switch(state->eventParm) {
-					case GTS_RED_CAPTURE:
-						bs->blueflagstatus = 0;
-						bs->redflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break; //see BotMatch_CTF
-					case GTS_BLUE_CAPTURE:
-						bs->blueflagstatus = 0;
-						bs->redflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break; //see BotMatch_CTF
-					case GTS_RED_RETURN:
-						//blue flag is returned
-						bs->blueflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_BLUE_RETURN:
-						//red flag is returned
-						bs->redflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_RED_TAKEN:
-						//blue flag is taken
-						bs->blueflagstatus = 1;
-						bs->flagstatuschanged = true;
-						break; //see BotMatch_CTF
-					case GTS_BLUE_TAKEN:
-						//red flag is taken
-						bs->redflagstatus = 1;
-						bs->flagstatuschanged = true;
-						break; //see BotMatch_CTF
-				}
-			}
-#ifdef MISSIONPACK
-			else if (gametype == GT_1FCTF) {
-				switch(state->eventParm) {
-					case GTS_RED_CAPTURE:
-						bs->neutralflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_BLUE_CAPTURE:
-						bs->neutralflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_RED_RETURN:
-						//flag has returned
-						bs->neutralflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_BLUE_RETURN:
-						//flag has returned
-						bs->neutralflagstatus = 0;
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_RED_TAKEN:
-						bs->neutralflagstatus = BotTeam(bs) == TEAM_RED ? 2 : 1; //FIXME: check Team_TakeFlagSound in g_team.c
-						bs->flagstatuschanged = true;
-						break;
-					case GTS_BLUE_TAKEN:
-						bs->neutralflagstatus = BotTeam(bs) == TEAM_BLUE ? 2 : 1; //FIXME: check Team_TakeFlagSound in g_team.c
-						bs->flagstatuschanged = true;
-						break;
-				}
-			}
-#endif
-			break;
-		}
-		case EV_PLAYER_TELEPORT_IN:
-		{
-			VectorCopy(state->origin, lastteleport_origin);
-			lastteleport_time = FloatTime();
-			break;
-		}
-		case EV_GENERAL_SOUND:
-		{
-			//if this sound is played on the bot
-			if (state->number == bs->client) {
-				if (state->eventParm < 0 || state->eventParm > MAX_SOUNDS) {
-					BotAI_Print(PRT_ERROR, "EV_GENERAL_SOUND: eventParm (%d) out of range\n", state->eventParm);
-					break;
-				}
-				//check out the sound
-				trap_GetConfigstring(CS_SOUNDS + state->eventParm, buf, sizeof(buf));
-				//if falling into a death pit
-				if (!strcmp(buf, "*falling1.wav")) {
-					//if the bot has a personal teleporter
-					if (bs->inventory[INVENTORY_TELEPORTER] > 0) {
-						//use the holdable item
-						trap_EA_Use(bs->client);
-					}
-				}
-			}
-			break;
-		}
-		case EV_FOOTSTEP:
-		case EV_FOOTSTEP_METAL:
-		case EV_FOOTSPLASH:
-		case EV_FOOTWADE:
-		case EV_SWIM:
-		case EV_FALL_SHORT:
-		case EV_FALL_MEDIUM:
-		case EV_FALL_FAR:
-		case EV_STEP_4:
-		case EV_STEP_8:
-		case EV_STEP_12:
-		case EV_STEP_16:
-		case EV_JUMP_PAD:
-		case EV_JUMP:
-		case EV_TAUNT:
-		case EV_WATER_TOUCH:
-		case EV_WATER_LEAVE:
-		case EV_WATER_UNDER:
-		case EV_WATER_CLEAR:
-		case EV_ITEM_PICKUP:
-		case EV_GLOBAL_ITEM_PICKUP:
-		case EV_NOAMMO:
-		case EV_CHANGE_WEAPON:
-		case EV_FIRE_WEAPON:
-			//FIXME: either add to sound queue or mark player as someone making noise
-			break;
-		case EV_USE_ITEM0:
-		case EV_USE_ITEM1:
-		case EV_USE_ITEM2:
-		case EV_USE_ITEM3:
-		case EV_USE_ITEM4:
-		case EV_USE_ITEM5:
-		case EV_USE_ITEM6:
-		case EV_USE_ITEM7:
-		case EV_USE_ITEM8:
-		case EV_USE_ITEM9:
-		case EV_USE_ITEM10:
-		case EV_USE_ITEM11:
-		case EV_USE_ITEM12:
-		case EV_USE_ITEM13:
-		case EV_USE_ITEM14:
-			break;
-	}
-}
+ * BotCheckEvents was removed here (explicitly excluded per the plan): it
+ * needs full entityState_t/gentity_t fields (state->eType/event/eventParm,
+ * g_entities[].eventTime) fed by a Q3 snapshot-entity loop this Q2 port
+ * has no equivalent for. Its two gameplay-relevant jobs are both already
+ * covered elsewhere with zero g_entities dependency:
+ *   - EV_OBITUARY's bs->botdeathtype/lastkilledby/botsuicide/num_deaths/
+ *     enemydeathtype/lastkilledplayer/num_kills bookkeeping is now
+ *     written directly by botlib/be_interface_q2.c's Q2BotNotifyDeath/
+ *     Q2BotNotifyKill (called from game_q2/p_client.c's player_die(),
+ *     itself event-driven).
+ *   - CTF flag-status events (GTS_*) are Phase 2 scope (see the plan);
+ *     bs->redflagstatus/blueflagstatus simply stay at their default (0)
+ *     until then.
+ * Everything else in the switch (footstep/pain/pickup sound bookkeeping,
+ * the death-pit personal-teleporter check, the global powerup-respawn
+ * BotGoForPowerups() call) has no Q2 signal to drive it either and is
+ * accepted as a minor, known gap alongside the above -- see the report.
+ */
 
 /*
 ==================
@@ -5011,37 +4854,21 @@ BotCheckSnapshot
 ==================
 */
 void BotCheckSnapshot(bot_state_t *bs) {
-	int ent;
-	entityState_t state;
-
-	//remove all avoid spots
-	trap_BotAddAvoidSpot(bs->ms, vec3_origin, 0, AVOID_CLEAR);
-	//reset kamikaze body
-	bs->kamikazebody = 0;
-	//reset number of proxmines
-	bs->numproxmines = 0;
-	//
-	ent = 0;
-	while( ( ent = BotAI_GetSnapshotEntity( bs->client, ent, &state ) ) != -1 ) {
-		//check the entity state for events
-		BotCheckEvents(bs, &state);
-		//check for grenades the bot should avoid
-		BotCheckForGrenades(bs, &state);
-		//
-#ifdef MISSIONPACK
-		//check for proximity mines which the bot should deactivate
-		BotCheckForProxMines(bs, &state);
-		//check for dead bodies with the kamikaze effect which should be gibbed
-		BotCheckForKamikazeBody(bs, &state);
-#endif
-	}
-	//check the player state for events
-	BotAI_GetEntityState(bs->client, &state);
-	//copy the player state events to the entity state
-	state.event = bs->cur_ps.externalEvent;
-	state.eventParm = bs->cur_ps.externalEventParm;
-	//
-	BotCheckEvents(bs, &state);
+	/*
+	 * Both of real Q3's per-frame jobs here are handled elsewhere now:
+	 *   - BotCheckEvents needed a Q3 snapshot-entity feed Q2 has none of
+	 *     (see the comment above) -- dropped per the plan.
+	 *   - BotCheckForGrenades' avoid-spot refresh is ported to
+	 *     botlib/be_interface_q2.c's Q2BotCheckGrenades (AAS_NextEntity/
+	 *     AAS_EntityInfo scan against the Q2 grenade-effects cache that
+	 *     lives in that file), called from Q2BotAI immediately before
+	 *     this same frame's BotAI() so the avoid spots are fresh before
+	 *     BotMoveToGoal consults them -- see the report for why it moved
+	 *     rather than staying a call from here.
+	 * bs->kamikazebody/numproxmines (MISSIONPACK-only bookkeeping, unused
+	 * in this non-MISSIONPACK build) are left at their defaults.
+	 */
+	(void)bs;
 }
 
 /*
@@ -5221,7 +5048,16 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 		Info_SetValueForKey(userinfo, "sex", gender);
 		trap_SetUserinfo(bs->client, userinfo);
 		//set the team
-		if ( !bs->map_restart && g_gametype.integer != GT_TOURNAMENT ) {
+		/* g_gametype.integer: real Q3 game code registers a `vmCvar_t
+		 * g_gametype` cvar mirroring the "g_gametype" cvar this repo's
+		 * ai_dmq3.c/ai_main.c already read/write by name elsewhere
+		 * (trap_Cvar_VariableIntegerValue("g_gametype") at
+		 * BotSetupDeathmatchAI, trap_Cvar_Set("g_gametype", ...) in
+		 * ai_main.c) -- that registration never got carried into this
+		 * repo's game_q3/ snapshot (no g_*.c files at all). Using the
+		 * already-populated plain `gametype` int here instead of a
+		 * phantom vmCvar_t is the minimal, faithful fix. */
+		if ( !bs->map_restart && gametype != GT_TOURNAMENT ) {
 			Com_sprintf(buf, sizeof(buf), "team %s", bs->settings.team);
 			trap_EA_Command(bs->client, buf);
 		}
@@ -5293,93 +5129,24 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 	bs->lasthitcount = bs->cur_ps.persistant[PERS_HITS];
 }
 
-/*
-==================
-BotSetEntityNumForGoalWithModel
-==================
-*/
-void BotSetEntityNumForGoalWithModel(bot_goal_t *goal, int eType, char *modelname) {
-	gentity_t *ent;
-	int i, modelindex;
-	vec3_t dir;
-
-	modelindex = G_ModelIndex( modelname );
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
-		}
-		if ( eType && ent->s.eType != eType) {
-			continue;
-		}
-		if (ent->s.modelindex != modelindex) {
-			continue;
-		}
-		VectorSubtract(goal->origin, ent->s.origin, dir);
-		if (VectorLengthSquared(dir) < Square(10)) {
-			goal->entitynum = i;
-			return;
-		}
-	}
-}
-
-/*
-==================
-BotSetEntityNumForGoal
-==================
-*/
-void BotSetEntityNumForGoal(bot_goal_t *goal, char *classname) {
-	gentity_t *ent;
-	int i;
-	vec3_t dir;
-
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
-		}
-		if ( !Q_stricmp(ent->classname, classname) ) {
-			continue;
-		}
-		VectorSubtract(goal->origin, ent->s.origin, dir);
-		if (VectorLengthSquared(dir) < Square(10)) {
-			goal->entitynum = i;
-			return;
-		}
-	}
-}
-
-/*
-==================
-BotGoalForBSPEntity
-==================
-*/
-int BotGoalForBSPEntity( char *classname, bot_goal_t *goal ) {
-	char value[MAX_INFO_STRING];
-	vec3_t origin, start, end;
-	int ent, numareas, areas[10];
-
-	memset(goal, 0, sizeof(bot_goal_t));
-	for (ent = trap_AAS_NextBSPEntity(0); ent; ent = trap_AAS_NextBSPEntity(ent)) {
-		if (!trap_AAS_ValueForBSPEpairKey(ent, "classname", value, sizeof(value)))
-			continue;
-		if (!strcmp(value, classname)) {
-			if (!trap_AAS_VectorForBSPEpairKey(ent, "origin", origin))
-				return false;
-			VectorCopy(origin, goal->origin);
-			VectorCopy(origin, start);
-			start[2] -= 32;
-			VectorCopy(origin, end);
-			end[2] += 32;
-			numareas = trap_AAS_TraceAreas(start, end, areas, NULL, 10);
-			if (!numareas)
-				return false;
-			goal->areanum = areas[0];
-			return true;
-		}
-	}
-	return false;
-}
+/* BotSetEntityNumForGoalWithModel and BotSetEntityNumForGoal were removed
+ * here as Q3-engine-shaped dead code superseded by the Q2 adapter, per
+ * this port: both scan g_entities[]/level.num_entities directly (neither
+ * of which botlib.so has access to across the frozen game<->botlib ABI),
+ * and this project does not define MISSIONPACK -- confirmed their only
+ * call sites (BotSetupDeathmatchAI's neutral-flag/obelisk setup, below)
+ * are inside #ifdef MISSIONPACK blocks. BotGoalForBSPEntity is also
+ * removed: unlike the other two it doesn't touch g_entities at all (it's
+ * real, BSP-epair-based code, routed entirely through
+ * trap_AAS_NextBSPEntity/trap_AAS_ValueForBSPEpairKey/
+ * trap_AAS_VectorForBSPEpairKey/trap_AAS_TraceAreas), but it has zero
+ * callers anywhere in this codebase (not even a declaration in
+ * ai_dmq3.h) and was never wired to MISSIONPACK either -- confirmed
+ * dead, just not for the "g_entities" reason the other two are.
+ *
+ * If a future phase needs to look up entity numbers for CTF flag goals,
+ * see design decision #3 in the plan instead (derive flag status from
+ * BotGetLevelItemGoal + AAS_EntityInfo polling; no g_entities needed). */
 
 /*
 ==================

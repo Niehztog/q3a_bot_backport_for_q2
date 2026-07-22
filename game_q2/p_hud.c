@@ -4,10 +4,6 @@
 #include "p_lag.h"
 #endif //CLIENTLAG
 
-#ifdef BOT
-#include "bl_chat.h"
-#endif
-
 
 /*
 ======================================================================
@@ -104,9 +100,9 @@ void BeginIntermission (edict_t *targ)
 	level.intermissiontime = level.time;
 	level.changemap = targ->map;
 
-#ifdef BOT
-	BotChat_OnEndLevel();
-#endif
+	/* BotChat_OnEndLevel() used to fire here; superseded automatically
+	 * by the real ported BotDeathmatchAI's own per-bot timers
+	 * (game_q3/ai_dmq3.c) -- no explicit call needed. */
 
 	if (strstr(level.changemap, "*"))
 	{

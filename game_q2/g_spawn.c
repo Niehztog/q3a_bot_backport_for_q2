@@ -4,7 +4,6 @@
 #ifdef BOT
 #include "bl_spawn.h"
 #include "bl_main.h"
-#include "bl_chat.h"
 #include "bl_redirgi.h"
 #endif //BOT
 
@@ -852,8 +851,9 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	BotSpawn();
 	//let the libraries load the map
 	BotLib_BotLoadMap(mapname);
-	//trigger start-level chat for any bots already spawned
-	BotChat_OnStartLevel();
+	/* BotChat_OnStartLevel() used to fire here; superseded automatically
+	 * by the real ported BotDeathmatchAI's own per-bot timers
+	 * (game_q3/ai_dmq3.c) -- no explicit call needed. */
 #endif //BOT
 
 #ifdef ZOID

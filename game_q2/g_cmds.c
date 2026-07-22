@@ -5,7 +5,6 @@
 #include "bl_cmd.h"
 #include "bl_main.h"
 #include "bl_redirgi.h"
-#include "bl_chat.h"
 #endif //BOT
 
 #ifdef OBSERVER
@@ -1196,7 +1195,25 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 			mlen = strlen(msgbuf);
 			if (mlen > 0 && msgbuf[mlen - 1] == '\n')
 				msgbuf[mlen - 1] = '\0';
-			BotChat_OnPlayerSay(ent, msgbuf);
+			/* BotChat_OnPlayerSay() used to queue this into every active
+			 * bot's console message queue here; mirror that same
+			 * broadcast inline now (bl_chat.c is gone) -- the real
+			 * ported ai_dmq3.c's BotCheckConsoleMessages, called from
+			 * BotDeathmatchAI every frame, drains this same queue via
+			 * trap_BotNextConsoleMessage/BotReplyChat and generates
+			 * replies itself. */
+			{
+				int bi;
+				for (bi = 0; bi < game.maxclients; bi++) {
+					edict_t *bot_ent = &g_edicts[bi + 1];
+					if (bot_ent == ent) continue;
+					if (!(bot_ent->flags & FL_BOT) || !bot_ent->inuse || !bot_ent->client)
+						continue;
+					if (!botglobals.botstates[bi].active || !botglobals.botstates[bi].library)
+						continue;
+					botglobals.botstates[bi].library->funcs.BotConsoleMessage(bi, CMS_CHAT, msgbuf);
+				}
+			}
 		}
 	}
 #endif //BOT

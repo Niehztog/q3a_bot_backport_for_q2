@@ -330,10 +330,15 @@ botlib:
 	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.dll
 
+# -Iassets/botfiles: chars.h/inv.h/syn.h/match.h are #include'd bare
+# (e.g. #include "chars.h") by the ported game_q3/ai_*.c files and live
+# in assets/botfiles/, not next to game_q3/ -- not reachable via any
+# existing relative include path. $(INCLUDE) is referenced throughout
+# this Makefile but was never actually assigned anywhere until now.
 build/botlib/%.o: %.c
 	@echo "===> CC $<"
 	${Q}mkdir -p $(@D)
-	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Iassets/botfiles $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
 release/botlib/botlib.dll : LDFLAGS += -shared -Wl,--kill-at
 
@@ -345,10 +350,14 @@ botlib:
 	$(MAKE) release/botlib/botlib.dylib
 
 # -DMACOS_X: see the matching comment on the bspc Darwin compile rule above.
+# -Iassets/botfiles: chars.h/inv.h/syn.h/match.h are #include'd bare
+# (e.g. #include "chars.h") by the ported game_q3/ai_*.c files and live
+# in assets/botfiles/, not next to game_q3/ -- not reachable via any
+# existing relative include path.
 build/botlib/%.o: %.c
 	@echo "===> CC $<"
 	${Q}mkdir -p $(@D)
-	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -DMACOS_X -o $@ $<
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Iassets/botfiles $(BOTCFLAGS) -DBOTLIB -DMACOS_X -o $@ $<
 
 release/botlib/botlib.dylib : CFLAGS += -fPIC
 release/botlib/botlib.dylib : LDFLAGS += -shared
@@ -360,10 +369,15 @@ botlib:
 	${Q}mkdir -p release/botlib
 	$(MAKE) release/botlib/botlib.so
 
+# -Iassets/botfiles: chars.h/inv.h/syn.h/match.h are #include'd bare
+# (e.g. #include "chars.h") by the ported game_q3/ai_*.c files and live
+# in assets/botfiles/, not next to game_q3/ -- not reachable via any
+# existing relative include path. $(INCLUDE) is referenced throughout
+# this Makefile but was never actually assigned anywhere until now.
 build/botlib/%.o: %.c
 	@echo "===> CC $<"
 	${Q}mkdir -p $(@D)
-	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) $(BOTCFLAGS) -DBOTLIB -o $@ $<
+	${Q}$(CC) -c $(CFLAGS) $(INCLUDE) -Iassets/botfiles $(BOTCFLAGS) -DBOTLIB -o $@ $<
 
 release/botlib/botlib.so : CFLAGS += -fPIC -Wno-unused-result
 release/botlib/botlib.so : LDFLAGS += -shared
@@ -372,8 +386,6 @@ endif
 # ----------
 
 GAME_OBJS_ = \
-	game_q2/bl_chat.o \
-	game_q3/ai_chat.o \
 	game_q2/bl_cmd.o \
 	game_q2/bl_botcfg.o \
 	game_q2/bl_debug.o \
@@ -556,8 +568,14 @@ BOTLIB_OBJS_ = \
 	botlib/l_script.o \
 	botlib/l_struct.o \
 	botlib/standalone.o \
+	botlib/ai_q2_shim.o \
 	bspc/l_utils.o \
-	game_q2/q_shared.o
+	game_q2/q_shared.o \
+	game_q3/ai_main.o \
+	game_q3/ai_dmnet.o \
+	game_q3/ai_dmq3.o \
+	game_q3/ai_team.o \
+	game_q3/ai_chat.o
 
 # ----------
 
