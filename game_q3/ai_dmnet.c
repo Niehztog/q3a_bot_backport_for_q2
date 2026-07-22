@@ -30,16 +30,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
-#include "g_local.h"
-#include "botlib.h"
-#include "be_aas.h"
-#include "be_ea.h"
-#include "be_ai_char.h"
-#include "be_ai_chat.h"
-#include "be_ai_gen.h"
-#include "be_ai_goal.h"
-#include "be_ai_move.h"
-#include "be_ai_weap.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
 //
 #include "ai_main.h"
 #include "ai_dmq3.h"
@@ -53,8 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "syn.h"			//synonyms
 #include "match.h"			//string matching types and vars
 
-// for the voice chats
-#include "../../ui/menudef.h"
+/* Voice-chat VOICECHAT_* constants come from ai_q2_compat.h instead of
+ * MISSIONPACK's ui/menudef.h (outside this repo; Q2 has no voice chat). */
 
 //goal flag, see be_ai_goal.h for the other GFL_*
 #define GFL_AIR			128
@@ -569,11 +563,10 @@ int BotGetLongTermGoal(bot_state_t *bs, int tfl, int retreat, bot_goal_t *goal) 
 			bs->teammessage_time = 0;
 		}
 		//
-		if (bs->lastkilledplayer == bs->teamgoal.entitynum) {
+		if (bs->killedenemy_time > bs->teamgoal_time - TEAM_KILL_SOMEONE && bs->lastkilledplayer == bs->teamgoal.entitynum) {
 			EasyClientName(bs->teamgoal.entitynum, buf, sizeof(buf));
 			BotAI_BotInitialChat(bs, "kill_done", buf, NULL);
 			trap_BotEnterChat(bs->cs, bs->decisionmaker, CHAT_TELL);
-			bs->lastkilledplayer = -1;
 			bs->ltgtype = 0;
 		}
 		//

@@ -279,6 +279,24 @@ int AAS_OriginOfMoverWithModelNum(int modelnum, vec3_t origin)
 	return false;
 } //end of the function AAS_OriginOfMoverWithModelNum
 //===========================================================================
+// Q2: the entity number of the mover with the given model
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//===========================================================================
+int AAS_MoverWithModelNum(int modelnum)
+{
+	int i;
+
+	for (i = 0; i < aasworld.maxentities; i++)
+	{
+		if (aasworld.entities[i].i.type == ET_MOVER &&
+			aasworld.entities[i].i.modelindex == modelnum) return i;
+	} //end for
+	return 0;
+} //end of the function AAS_MoverWithModelNum
+//===========================================================================
 //
 // Parameter:				-
 // Returns:					-
@@ -391,9 +409,9 @@ int AAS_NearestEntity(vec3_t origin, int modelindex)
 		ent = &aasworld.entities[i];
 		if (ent->i.modelindex != modelindex) continue;
 		VectorSubtract(ent->i.origin, origin, dir);
-		if (abs(dir[0]) < 40)
+		if (fabsf(dir[0]) < 40)
 		{
-			if (abs(dir[1]) < 40)
+			if (fabsf(dir[1]) < 40)
 			{
 				dist = VectorLength(dir);
 				if (dist < bestdist)

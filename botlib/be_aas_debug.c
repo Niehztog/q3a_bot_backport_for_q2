@@ -565,6 +565,7 @@ void AAS_PrintTravelType(int traveltype)
 		case TRAVEL_GRAPPLEHOOK: str = "TRAVEL_GRAPPLEHOOK"; break;
 		case TRAVEL_JUMPPAD: str = "TRAVEL_JUMPPAD"; break;
 		case TRAVEL_FUNCBOB: str = "TRAVEL_FUNCBOB"; break;
+		case TRAVEL_FUNCTRAIN: str = "TRAVEL_FUNCTRAIN"; break;
 		default: str = "UNKNOWN TRAVEL TYPE"; break;
 	} //end switch
 	botimport.Print(PRT_MESSAGE, "%s", str);

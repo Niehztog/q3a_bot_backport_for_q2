@@ -31,16 +31,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 
-#include "g_local.h"
-#include "botlib.h"
-#include "be_aas.h"
-#include "be_ea.h"
-#include "be_ai_char.h"
-#include "be_ai_chat.h"
-#include "be_ai_gen.h"
-#include "be_ai_goal.h"
-#include "be_ai_move.h"
-#include "be_ai_weap.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
 //
 #include "ai_main.h"
 #include "ai_dmq3.h"
@@ -54,8 +48,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "syn.h"				//synonyms
 #include "match.h"				//string matching types and vars
 
-// for the voice chats
-#include "../../ui/menudef.h" // sos001205 - for q3_ui also
+/* Voice-chat VOICECHAT_* constants come from ai_q2_compat.h instead of
+ * MISSIONPACK's ui/menudef.h (outside this repo; Q2 has no voice chat). */
 
 // from aasfile.h
 #define AREACONTENTS_MOVER				1024
@@ -83,7 +77,7 @@ vmCvar_t bot_challenge;
 vmCvar_t bot_predictobstacles;
 vmCvar_t g_spSkill;
 
-extern vmCvar_t bot_developer;
+extern vmCvar_t bot_developer_cvar;
 
 vec3_t lastteleport_origin;		//last teleport event origin
 float lastteleport_time;		//last teleport event time
@@ -1715,76 +1709,12 @@ void BotCheckItemPickup(bot_state_t *bs, int *oldinventory) {
 BotUpdateInventory
 ==================
 */
+/* Q2: the adapter copies the game's inventory, whose slots are inv.h's
+ * (be_interface_q2.c Q2BotUpdateClient). */
 void BotUpdateInventory(bot_state_t *bs) {
 	int oldinventory[MAX_ITEMS];
 
 	memcpy(oldinventory, bs->inventory, sizeof(oldinventory));
-	//armor
-	bs->inventory[INVENTORY_ARMOR] = bs->cur_ps.stats[STAT_ARMOR];
-	//weapons
-	bs->inventory[INVENTORY_GAUNTLET] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GAUNTLET)) != 0;
-	bs->inventory[INVENTORY_SHOTGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_SHOTGUN)) != 0;
-	bs->inventory[INVENTORY_MACHINEGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_MACHINEGUN)) != 0;
-	bs->inventory[INVENTORY_GRENADELAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GRENADE_LAUNCHER)) != 0;
-	bs->inventory[INVENTORY_ROCKETLAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_ROCKET_LAUNCHER)) != 0;
-	bs->inventory[INVENTORY_LIGHTNING] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_LIGHTNING)) != 0;
-	bs->inventory[INVENTORY_RAILGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_RAILGUN)) != 0;
-	bs->inventory[INVENTORY_PLASMAGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_PLASMAGUN)) != 0;
-	bs->inventory[INVENTORY_BFG10K] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_BFG)) != 0;
-	bs->inventory[INVENTORY_GRAPPLINGHOOK] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_GRAPPLING_HOOK)) != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NAILGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_NAILGUN)) != 0;;
-	bs->inventory[INVENTORY_PROXLAUNCHER] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_PROX_LAUNCHER)) != 0;;
-	bs->inventory[INVENTORY_CHAINGUN] = (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_CHAINGUN)) != 0;;
-#endif
-	//ammo
-	bs->inventory[INVENTORY_SHELLS] = bs->cur_ps.ammo[WP_SHOTGUN];
-	bs->inventory[INVENTORY_BULLETS] = bs->cur_ps.ammo[WP_MACHINEGUN];
-	bs->inventory[INVENTORY_GRENADES] = bs->cur_ps.ammo[WP_GRENADE_LAUNCHER];
-	bs->inventory[INVENTORY_CELLS] = bs->cur_ps.ammo[WP_PLASMAGUN];
-	bs->inventory[INVENTORY_LIGHTNINGAMMO] = bs->cur_ps.ammo[WP_LIGHTNING];
-	bs->inventory[INVENTORY_ROCKETS] = bs->cur_ps.ammo[WP_ROCKET_LAUNCHER];
-	bs->inventory[INVENTORY_SLUGS] = bs->cur_ps.ammo[WP_RAILGUN];
-	bs->inventory[INVENTORY_BFGAMMO] = bs->cur_ps.ammo[WP_BFG];
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NAILS] = bs->cur_ps.ammo[WP_NAILGUN];
-	bs->inventory[INVENTORY_MINES] = bs->cur_ps.ammo[WP_PROX_LAUNCHER];
-	bs->inventory[INVENTORY_BELT] = bs->cur_ps.ammo[WP_CHAINGUN];
-#endif
-	//powerups
-	bs->inventory[INVENTORY_HEALTH] = bs->cur_ps.stats[STAT_HEALTH];
-	bs->inventory[INVENTORY_TELEPORTER] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_TELEPORTER;
-	bs->inventory[INVENTORY_MEDKIT] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_MEDKIT;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_KAMIKAZE] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_KAMIKAZE;
-	bs->inventory[INVENTORY_PORTAL] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_PORTAL;
-	bs->inventory[INVENTORY_INVULNERABILITY] = bs->cur_ps.stats[STAT_HOLDABLE_ITEM] == MODELINDEX_INVULNERABILITY;
-#endif
-	bs->inventory[INVENTORY_QUAD] = bs->cur_ps.powerups[PW_QUAD] != 0;
-	bs->inventory[INVENTORY_ENVIRONMENTSUIT] = bs->cur_ps.powerups[PW_BATTLESUIT] != 0;
-	bs->inventory[INVENTORY_HASTE] = bs->cur_ps.powerups[PW_HASTE] != 0;
-	bs->inventory[INVENTORY_INVISIBILITY] = bs->cur_ps.powerups[PW_INVIS] != 0;
-	bs->inventory[INVENTORY_REGEN] = bs->cur_ps.powerups[PW_REGEN] != 0;
-	bs->inventory[INVENTORY_FLIGHT] = bs->cur_ps.powerups[PW_FLIGHT] != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_SCOUT] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_SCOUT;
-	bs->inventory[INVENTORY_GUARD] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_GUARD;
-	bs->inventory[INVENTORY_DOUBLER] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_DOUBLER;
-	bs->inventory[INVENTORY_AMMOREGEN] = bs->cur_ps.stats[STAT_PERSISTANT_POWERUP] == MODELINDEX_AMMOREGEN;
-#endif
-	bs->inventory[INVENTORY_REDFLAG] = bs->cur_ps.powerups[PW_REDFLAG] != 0;
-	bs->inventory[INVENTORY_BLUEFLAG] = bs->cur_ps.powerups[PW_BLUEFLAG] != 0;
-#ifdef MISSIONPACK
-	bs->inventory[INVENTORY_NEUTRALFLAG] = bs->cur_ps.powerups[PW_NEUTRALFLAG] != 0;
-	if (BotTeam(bs) == TEAM_RED) {
-		bs->inventory[INVENTORY_REDCUBE] = bs->cur_ps.generic1;
-		bs->inventory[INVENTORY_BLUECUBE] = 0;
-	}
-	else {
-		bs->inventory[INVENTORY_REDCUBE] = 0;
-		bs->inventory[INVENTORY_BLUECUBE] = bs->cur_ps.generic1;
-	}
-#endif
 	BotCheckItemPickup(bs, oldinventory);
 }
 
@@ -2232,6 +2162,9 @@ float BotAggression(bot_state_t *bs) {
 	//if the bot can use the grenade launcher
 	if (bs->inventory[INVENTORY_GRENADELAUNCHER] > 0 &&
 			bs->inventory[INVENTORY_GRENADES] > 10) return 80;
+	//if the bot can use the super shotgun
+	if (bs->inventory[INVENTORY_SUPERSHOTGUN] > 0 &&
+			bs->inventory[INVENTORY_SHELLS] > 10) return 80;
 	//if the bot can use the shotgun
 	if (bs->inventory[INVENTORY_SHOTGUN] > 0 &&
 			bs->inventory[INVENTORY_SHELLS] > 10) return 50;
@@ -2562,6 +2495,9 @@ void BotGoForPowerups(bot_state_t *bs) {
 	BotDontAvoid(bs, "Speed");
 	BotDontAvoid(bs, "Invisibility");
 	//BotDontAvoid(bs, "Flight");
+	BotDontAvoid(bs, "Invulnerability");
+	BotDontAvoid(bs, "DualFire Damage");
+	BotDontAvoid(bs, "Double Damage");
 	//reset the long term goal time so the bot will go for the powerup
 	//NOTE: the long term goal type doesn't change
 	bs->ltg_time = 0;
@@ -2765,8 +2701,10 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 BotSameTeam
 ==================
 */
+/* Q2's teams are not numbers: be_interface_q2.c decides by Gladiator's rules */
+extern int Q2_ClientsOnSameTeam(int client1, int client2);
+
 int BotSameTeam(bot_state_t *bs, int entnum) {
-	char info1[1024], info2[1024];
 
 	if (bs->client < 0 || bs->client >= MAX_CLIENTS) {
 		//BotAI_Print(PRT_ERROR, "BotSameTeam: client out of range\n");
@@ -2777,10 +2715,7 @@ int BotSameTeam(bot_state_t *bs, int entnum) {
 		return false;
 	}
 	if ( gametype >= GT_TEAM ) {
-		trap_GetConfigstring(CS_PLAYERS+bs->client, info1, sizeof(info1));
-		trap_GetConfigstring(CS_PLAYERS+entnum, info2, sizeof(info2));
-		//
-		if (atoi(Info_ValueForKey(info1, "t")) == atoi(Info_ValueForKey(info2, "t"))) return true;
+		return Q2_ClientsOnSameTeam(bs->client, entnum);
 	}
 	return false;
 }
@@ -2829,8 +2764,12 @@ float BotEntityVisible(int viewer, vec3_t eye, vec3_t viewangles, float fov, int
 	aas_entityinfo_t entinfo;
 	vec3_t dir, entangles, start, end, middle;
 
-	//calculate middle of bounding box
 	BotEntityInfo(ent, &entinfo);
+	if (!entinfo.valid) {
+		return 0;
+	}
+
+	//calculate middle of bounding box
 	VectorAdd(entinfo.mins, entinfo.maxs, middle);
 	VectorScale(middle, 0.5, middle);
 	VectorAdd(entinfo.origin, middle, middle);
@@ -3457,7 +3396,7 @@ void BotAimAtEnemy(bot_state_t *bs) {
 					if (VectorLengthSquared(dir) < Square(60)) {
 						VectorSubtract(trace.endpos, start, dir);
 						//if the hitpoint is far anough from the bot
-						if (VectorLengthSquared(dir) > Square(100)) {
+						if (VectorLengthSquared(dir) > Square(wi.proj.radius)) {
 							//check if the bot is visible from the ground target
 							trace.endpos[2] += 1;
 							BotAI_Trace(&trace, trace.endpos, NULL, NULL, entinfo.origin, entinfo.number, MASK_SHOT);
@@ -3635,25 +3574,22 @@ void BotCheckAttack(bot_state_t *bs) {
 	VectorMA(start, -12, forward, start);
 	BotAI_Trace(&trace, start, mins, maxs, end, bs->entitynum, MASK_SHOT);
 	//if the entity is a client
-	if (trace.ent > 0 && trace.ent <= MAX_CLIENTS) {
+	if (trace.ent >= 0 && trace.ent < MAX_CLIENTS) {
 		if (trace.ent != attackentity) {
 			//if a teammate is hit
 			if (BotSameTeam(bs, trace.ent))
 				return;
 		}
 	}
-	//if won't hit the enemy or not attacking a player (obelisk)
-	if (trace.ent != attackentity || attackentity >= MAX_CLIENTS) {
-		//if the projectile does radial damage
-		if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
-			if (trace.fraction * 1000 < wi.proj.radius) {
-				points = (wi.proj.damage - 0.5 * trace.fraction * 1000) * 0.5;
-				if (points > 0) {
-					return;
-				}
+	//if the projectile does radial damage
+	if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
+		if (trace.fraction * 1000 < wi.proj.radius) {
+			points = (wi.proj.damage - 0.5 * trace.fraction * 1000) * 0.5;
+			if (points > 0) {
+				return;
 			}
-			//FIXME: check if a teammate gets radial damage
 		}
+		//FIXME: check if a teammate gets radial damage
 	}
 	//if fire has to be release to activate weapon
 	if (wi.flags & WFL_FIRERELEASED) {
@@ -3708,7 +3644,7 @@ void BotMapScripts(bot_state_t *bs) {
 			//
 			if (!entinfo.valid) continue;
 			//if the enemy isn't dead and the enemy isn't the bot self
-			if (EntityIsDead(&entinfo) || entinfo.number == bs->entitynum) continue;
+		if (EntityIsDead(&entinfo) || entinfo.number == bs->entitynum) continue;
 			//
 			if (entinfo.origin[0] > mins[0] && entinfo.origin[0] < maxs[0]) {
 				if (entinfo.origin[1] > mins[1] && entinfo.origin[1] < maxs[1]) {
@@ -3773,30 +3709,37 @@ void BotSetMovedir(vec3_t angles, vec3_t movedir) {
 ==================
 BotModelMinsMaxs
 
-this is ugly
+Q2: the entities come from the AAS entity table; triggers are never sent
+(SVF_NOCLIENT) and keep the bounds of their BSP model
 ==================
 */
 int BotModelMinsMaxs(int modelindex, int eType, int contents, vec3_t mins, vec3_t maxs) {
-	gentity_t *ent;
-	int i;
+	int ent;
+	aas_entityinfo_t info;
+	vec3_t angles, bmins, bmaxs, borigin;
 
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
+	/* Q2 triggers are SVF_NOCLIENT, never sent to AAS; they do not move, so
+	 * the bounds of their BSP model are theirs */
+	if (contents == CONTENTS_TRIGGER) {
+		VectorClear(angles);
+		AAS_BSPModelMinsMaxsOrigin(modelindex, angles, bmins, bmaxs, borigin);
+		if (mins) VectorCopy(bmins, mins);
+		if (maxs) VectorCopy(bmaxs, maxs);
+		return 0;
+	}
+	for (ent = trap_AAS_NextEntity(0); ent; ent = trap_AAS_NextEntity(ent)) {
+		trap_AAS_EntityInfo(ent, &info);
+		if (!info.valid) continue;
+		if (eType && info.type != eType) continue;
+		if (contents) {
+			if (contents == CONTENTS_TRIGGER && info.solid != 1 /* Q2 SOLID_TRIGGER */) continue;
+			if (contents == CONTENTS_SOLID && info.solid != 3 /* Q2 SOLID_BSP */) continue;
+			if (contents != CONTENTS_TRIGGER && contents != CONTENTS_SOLID) continue;
 		}
-		if ( eType && ent->s.eType != eType) {
-			continue;
-		}
-		if ( contents && ent->r.contents != contents) {
-			continue;
-		}
-		if (ent->s.modelindex == modelindex) {
-			if (mins)
-				VectorAdd(ent->r.currentOrigin, ent->r.mins, mins);
-			if (maxs)
-				VectorAdd(ent->r.currentOrigin, ent->r.maxs, maxs);
-			return i;
+		if (info.modelindex == modelindex) {
+			if (mins) VectorAdd(info.origin, info.mins, mins);
+			if (maxs) VectorAdd(info.origin, info.maxs, maxs);
+			return ent;
 		}
 	}
 	if (mins)
@@ -4243,7 +4186,7 @@ int BotGetActivateGoal(bot_state_t *bs, int entitynum, bot_activategoal_t *activ
 	}
 	// get the targetname so we can find an entity with a matching target
 	if (!trap_AAS_ValueForBSPEpairKey(ent, "targetname", targetname[0], sizeof(targetname[0]))) {
-		if (bot_developer.integer) {
+		if (bot_developer_cvar.integer) {
 			BotAI_Print(PRT_ERROR, "BotGetActivateGoal: entity with model \"%s\" has no targetname\n", model);
 		}
 		return 0;
@@ -4259,14 +4202,14 @@ int BotGetActivateGoal(bot_state_t *bs, int entitynum, bot_activategoal_t *activ
 			}
 		}
 		if (!ent) {
-			if (bot_developer.integer) {
+			if (bot_developer_cvar.integer) {
 				BotAI_Print(PRT_ERROR, "BotGetActivateGoal: no entity with target \"%s\"\n", targetname[i]);
 			}
 			i--;
 			continue;
 		}
 		if (!trap_AAS_ValueForBSPEpairKey(ent, "classname", classname, sizeof(classname))) {
-			if (bot_developer.integer) {
+			if (bot_developer_cvar.integer) {
 				BotAI_Print(PRT_ERROR, "BotGetActivateGoal: entity with target \"%s\" has no classname\n", targetname[i]);
 			}
 			continue;
@@ -4326,7 +4269,9 @@ int BotGetActivateGoal(bot_state_t *bs, int entitynum, bot_activategoal_t *activ
 			continue;
 		}
 		// the actual button or trigger might be linked through a target_relay or target_delay
-		else if (!strcmp(classname, "target_relay") || !strcmp(classname, "target_delay")) {
+		// (Q2: trigger_relay)
+		else if (!strcmp(classname, "target_relay") || !strcmp(classname, "target_delay") ||
+				!strcmp(classname, "trigger_relay")) {
 			if (trap_AAS_ValueForBSPEpairKey(ent, "targetname", targetname[i+1], sizeof(targetname[0]))) {
 				i++;
 				cur_entities[i] = trap_AAS_NextBSPEntity(0);
@@ -4418,6 +4363,29 @@ void BotRandomMove(bot_state_t *bs, bot_moveresult_t *moveresult) {
 
 /*
 ==================
+BotBlockedByRotating
+
+Q2: whether the blocking entity is a func_rotating.  The adapter makes
+every solid brush model an ET_MOVER, func_walls too.
+==================
+*/
+static int BotBlockedByRotating(aas_entityinfo_t *entinfo) {
+	int ent;
+	char model[128], tmpmodel[128], classname[128];
+
+	if (entinfo->type != ET_MOVER) return false;
+	Com_sprintf(model, sizeof(model), "*%d", entinfo->modelindex);
+	for (ent = trap_AAS_NextBSPEntity(0); ent; ent = trap_AAS_NextBSPEntity(ent)) {
+		if (!trap_AAS_ValueForBSPEpairKey(ent, "model", tmpmodel, sizeof(tmpmodel))) continue;
+		if (strcmp(model, tmpmodel)) continue;
+		if (!trap_AAS_ValueForBSPEpairKey(ent, "classname", classname, sizeof(classname))) return false;
+		return !strcmp(classname, "func_rotating");
+	}
+	return false;
+}
+
+/*
+==================
 BotAIBlocked
 
 Very basic handling of bots being blocked by other entities.
@@ -4452,7 +4420,7 @@ void BotAIBlocked(bot_state_t *bs, bot_moveresult_t *moveresult, int activate) {
 	BotAI_Print(PRT_MESSAGE, "%s: I'm blocked by model %d\n", netname, entinfo.modelindex);
 #endif // OBSTACLEDEBUG
 	// if blocked by a bsp model and the bot wants to activate it
-	if (activate && entinfo.modelindex > 0 && entinfo.modelindex <= max_bspmodelindex) {
+	if (activate && entinfo.type == ET_MOVER && entinfo.modelindex > 0 && entinfo.modelindex <= max_bspmodelindex) {
 		// find the bsp entity which should be activated in order to get the blocking entity out of the way
 		bspent = BotGetActivateGoal(bs, entinfo.number, &activategoal);
 		if (bspent) {
@@ -4503,6 +4471,9 @@ void BotAIBlocked(bot_state_t *bs, bot_moveresult_t *moveresult, int activate) {
 	CrossProduct(hordir, up, sideward);
 	//
 	if (bs->flags & BFL_AVOIDRIGHT) VectorNegate(sideward, sideward);
+	// Q2: stepping aside along a func_rotating (q2dm5's crusher) pins the
+	// bot against the next wall; back off instead
+	if (BotBlockedByRotating(&entinfo)) VectorNegate(hordir, sideward);
 	// try to crouch straight forward?
 	if (movetype != MOVE_CROUCH || !trap_BotMoveInDirection(bs->ms, hordir, 400, movetype)) {
 		// perform the movement
@@ -4833,7 +4804,7 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 		}
 		case EV_GLOBAL_SOUND:
 		{
-			if (state->eventParm < 0 || state->eventParm > MAX_SOUNDS) {
+			if (state->eventParm < 0 || state->eventParm >= MAX_SOUNDS) {
 				BotAI_Print(PRT_ERROR, "EV_GLOBAL_SOUND: eventParm (%d) out of range\n", state->eventParm);
 				break;
 			}
@@ -4943,7 +4914,7 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 		{
 			//if this sound is played on the bot
 			if (state->number == bs->client) {
-				if (state->eventParm < 0 || state->eventParm > MAX_SOUNDS) {
+				if (state->eventParm < 0 || state->eventParm >= MAX_SOUNDS) {
 					BotAI_Print(PRT_ERROR, "EV_GENERAL_SOUND: eventParm (%d) out of range\n", state->eventParm);
 					break;
 				}
@@ -5221,7 +5192,7 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 		Info_SetValueForKey(userinfo, "sex", gender);
 		trap_SetUserinfo(bs->client, userinfo);
 		//set the team
-		if ( !bs->map_restart && g_gametype.integer != GT_TOURNAMENT ) {
+		if ( !bs->map_restart && gametype != GT_TOURNAMENT ) {
 			Com_sprintf(buf, sizeof(buf), "team %s", bs->settings.team);
 			trap_EA_Command(bs->client, buf);
 		}
@@ -5293,93 +5264,8 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 	bs->lasthitcount = bs->cur_ps.persistant[PERS_HITS];
 }
 
-/*
-==================
-BotSetEntityNumForGoalWithModel
-==================
-*/
-void BotSetEntityNumForGoalWithModel(bot_goal_t *goal, int eType, char *modelname) {
-	gentity_t *ent;
-	int i, modelindex;
-	vec3_t dir;
-
-	modelindex = G_ModelIndex( modelname );
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
-		}
-		if ( eType && ent->s.eType != eType) {
-			continue;
-		}
-		if (ent->s.modelindex != modelindex) {
-			continue;
-		}
-		VectorSubtract(goal->origin, ent->s.origin, dir);
-		if (VectorLengthSquared(dir) < Square(10)) {
-			goal->entitynum = i;
-			return;
-		}
-	}
-}
-
-/*
-==================
-BotSetEntityNumForGoal
-==================
-*/
-void BotSetEntityNumForGoal(bot_goal_t *goal, char *classname) {
-	gentity_t *ent;
-	int i;
-	vec3_t dir;
-
-	ent = &g_entities[0];
-	for (i = 0; i < level.num_entities; i++, ent++) {
-		if ( !ent->inuse ) {
-			continue;
-		}
-		if ( !Q_stricmp(ent->classname, classname) ) {
-			continue;
-		}
-		VectorSubtract(goal->origin, ent->s.origin, dir);
-		if (VectorLengthSquared(dir) < Square(10)) {
-			goal->entitynum = i;
-			return;
-		}
-	}
-}
-
-/*
-==================
-BotGoalForBSPEntity
-==================
-*/
-int BotGoalForBSPEntity( char *classname, bot_goal_t *goal ) {
-	char value[MAX_INFO_STRING];
-	vec3_t origin, start, end;
-	int ent, numareas, areas[10];
-
-	memset(goal, 0, sizeof(bot_goal_t));
-	for (ent = trap_AAS_NextBSPEntity(0); ent; ent = trap_AAS_NextBSPEntity(ent)) {
-		if (!trap_AAS_ValueForBSPEpairKey(ent, "classname", value, sizeof(value)))
-			continue;
-		if (!strcmp(value, classname)) {
-			if (!trap_AAS_VectorForBSPEpairKey(ent, "origin", origin))
-				return false;
-			VectorCopy(origin, goal->origin);
-			VectorCopy(origin, start);
-			start[2] -= 32;
-			VectorCopy(origin, end);
-			end[2] += 32;
-			numareas = trap_AAS_TraceAreas(start, end, areas, NULL, 10);
-			if (!numareas)
-				return false;
-			goal->areanum = areas[0];
-			return true;
-		}
-	}
-	return false;
-}
+/* BotSetEntityNumForGoalWithModel, BotSetEntityNumForGoal, BotGoalForBSPEntity:
+ * MISSIONPACK only. */
 
 /*
 ==================

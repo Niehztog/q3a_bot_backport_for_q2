@@ -30,9 +30,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
-/* Q2 compatibility: pull in Q2 game headers + compat shim instead of Q3 */
-#include "../game_q2/g_local.h"
-#include "../game_q2/ai_chat_q2.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
+#include "ai_main.h"
+#include "ai_dmq3.h"
+#include "ai_chat.h"
+#include "chars.h"
+#include "inv.h"
+#include "syn.h"
 
 #define TIME_BETWEENCHATTING	25
 
@@ -269,15 +276,41 @@ char *BotWeaponNameForMeansOfDeath(int mod) {
 		case MOD_RAILGUN: return "Railgun";
 		case MOD_LIGHTNING: return "Lightning Gun";
 		case MOD_BFG:
-		case MOD_BFG_SPLASH: return "BFG10K";
+		case MOD_BFG_SPLASH:
+		case MOD_BFG_LASER: return "BFG10K";
 #ifdef MISSIONPACK
 		case MOD_NAIL: return "Nailgun";
 		case MOD_CHAINGUN: return "Chaingun";
 		case MOD_PROXIMITY_MINE: return "Proximity Launcher";
 		case MOD_KAMIKAZE: return "Kamikaze";
 		case MOD_JUICED: return "Prox mine";
+#else
+		case MOD_CHAINGUN: return "Chaingun";
 #endif
 		case MOD_GRAPPLE: return "Grapple";
+		case MOD_BLASTER: return "Blaster";
+		case MOD_SSHOTGUN: return "Super Shotgun";
+		case MOD_HYPERBLASTER: return "HyperBlaster";
+		case MOD_HANDGRENADE:
+		case MOD_HG_SPLASH:
+		case MOD_HELD_GRENADE: return "Hand Grenade";
+		case MOD_RIPPER: return "Ionripper";
+		case MOD_PHALANX: return "Phalanx";
+		case MOD_TRAP: return "Trap";
+		case MOD_CHAINFIST: return "Chainfist";
+		case MOD_DISINTEGRATOR:
+		case MOD_TRACKER: return "Disruptor";
+		case MOD_ETF_RIFLE: return "ETF Rifle";
+		case MOD_HEATBEAM: return "Plasma Beam";
+		case MOD_TESLA: return "Tesla";
+		case MOD_PROX: return "Prox Launcher";
+		case MOD_NUKE: return "A-M Bomb";
+		case MOD_VENGEANCE_SPHERE: return "Vengeance Sphere";
+		case MOD_HUNTER_SPHERE: return "Hunter Sphere";
+		case MOD_DEFENDER_SPHERE: return "Defender Sphere";
+		case MOD_DOPPLE_EXPLODE:
+		case MOD_DOPPLE_VENGEANCE:
+		case MOD_DOPPLE_HUNTER: return "Doppleganger";
 		default: return "[unknown weapon]";
 	}
 }
@@ -741,6 +774,7 @@ int BotChat_EnemySuicide(bot_state_t *bs) {
 	return true;
 }
 
+
 /*
 ==================
 BotChat_HitTalking
@@ -772,7 +806,7 @@ int BotChat_HitTalking(bot_state_t *bs) {
 	if (!BotValidChatPosition(bs)) return false;
 	//
 	ClientName(g_entities[bs->client].client->lasthurt_client, name, sizeof(name));
-	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->client].client->lasthurt_client);
+	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->client].client->lasthurt_mod);
 	//
 	BotAI_BotInitialChat(bs, "hit_talking", name, weap, NULL);
 	bs->lastchat_time = FloatTime();

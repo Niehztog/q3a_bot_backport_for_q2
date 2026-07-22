@@ -564,6 +564,15 @@ int AAS_ValidEntity(entity_t *mapent)
 	{
 		return true;
 	} //end else if
+	//Q2: a func_water is a door made of liquid; unless it starts open it
+	//is where it was built (rdm6's slime pool, drained by a button)
+	else if (!strcmp("func_water", ValueForKey(mapent, "classname")))
+	{
+		if (!(atoi(ValueForKey(mapent, "spawnflags")) & (DOOR_START_OPEN|SPAWNFLAG_NOT_DEATHMATCH)))
+		{
+			return true;
+		} //end if
+	} //end else if
 	/* NOTE: func_plat, func_train and other Q2 movers are intentionally
 	 * NOT included here.  Their brushes must NOT be in the AAS BSP tree
 	 * (causes "Tried parent" errors from overlapping geometry).

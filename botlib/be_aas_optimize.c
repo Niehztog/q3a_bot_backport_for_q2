@@ -297,6 +297,8 @@ void AAS_Optimize(void)
 		if ((aasworld.reachability[i].traveltype & TRAVELTYPE_MASK) == TRAVEL_JUMPPAD) continue;
 		//NOTE: for TRAVEL_FUNCBOB the facenum and edgenum contain other coded information
 		if ((aasworld.reachability[i].traveltype & TRAVELTYPE_MASK) == TRAVEL_FUNCBOB) continue;
+		//Q2: so for TRAVEL_FUNCTRAIN (the train model and the path positions)
+		if ((aasworld.reachability[i].traveltype & TRAVELTYPE_MASK) == TRAVEL_FUNCTRAIN) continue;
 		//
 		sign = aasworld.reachability[i].facenum;
 		aasworld.reachability[i].facenum = optimized.faceoptimizeindex[abs(aasworld.reachability[i].facenum)];
