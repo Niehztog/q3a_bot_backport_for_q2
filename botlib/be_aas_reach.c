@@ -212,7 +212,7 @@ int AAS_BestReachableLinkArea(aas_link_t *areas)
 //===========================================================================
 int AAS_GetJumpPadInfo(int ent, vec3_t areastart, vec3_t absmins, vec3_t absmaxs, vec3_t velocity)
 {
-	int modelnum, ent2;
+	int modelnum, ent2, i;
 	float speed, height, gravity, time, dist, forward;
 	vec3_t origin, angles, teststart, ent2origin;
 	aas_trace_t trace;
@@ -258,6 +258,21 @@ int AAS_GetJumpPadInfo(int ent, vec3_t areastart, vec3_t absmins, vec3_t absmaxs
 	} //end for
 	if (!ent2)
 	{
+		//Q2's trigger_push has no target: it sets the velocity of whatever
+		//touches it to its movedir (from its angles) times speed * 10, which
+		//the player move stores in shorts of 1/8 units ("speed" 1000 wraps)
+		if (!target[0])
+		{
+			VectorClear(angles);
+			if (!AAS_VectorForBSPEpairKey(ent, "angles", angles))
+				AAS_FloatForBSPEpairKey(ent, "angle", &angles[1]);
+			if (!angles[0] && angles[1] == -1 && !angles[2]) VectorSet(velocity, 0, 0, 1);
+			else if (!angles[0] && angles[1] == -2 && !angles[2]) VectorSet(velocity, 0, 0, -1);
+			else AngleVectors(angles, velocity, NULL, NULL);
+			for (i = 0; i < 3; i++)
+				velocity[i] = (short) (int) (velocity[i] * speed * 10 * 8) / 8.0f;
+			return true;
+		} //end if
 		botimport.Print(PRT_MESSAGE, "trigger_push without target entity %s\n", target);
 		return false;
 	} //end if
@@ -2896,7 +2911,7 @@ void AAS_Reachability_Teleport(void)
 	int area1num, area2num;
 	char target[MAX_EPAIRKEY], targetname[MAX_EPAIRKEY];
 	char classname[MAX_EPAIRKEY], model[MAX_EPAIRKEY];
-	int ent, dest;
+	int ent, dest, q2teleporter;
 	float angle;
 	vec3_t origin, destorigin, mins, maxs, end, angles;
 	vec3_t mid, velocity, cmdmove;
@@ -2908,6 +2923,7 @@ void AAS_Reachability_Teleport(void)
 	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
 	{
 		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		q2teleporter = false;
 		if (!strcmp(classname, "trigger_multiple"))
 		{
 			AAS_ValueForBSPEpairKey(ent, "model", model, MAX_EPAIRKEY);
@@ -2961,6 +2977,25 @@ void AAS_Reachability_Teleport(void)
 				continue;
 			} //end if
 		} //end if
+		//Quake II teleporter: a point entity the game spawns its trigger around
+		//(g_misc.c SP_misc_teleporter), with no brush to give it a teleporter area
+		else if (!strcmp(classname, "misc_teleporter"))
+		{
+			if (!AAS_VectorForBSPEpairKey(ent, "origin", origin))
+			{
+				botimport.Print(PRT_ERROR, "misc_teleporter without origin\n");
+				continue;
+			} //end if
+			if (!AAS_ValueForBSPEpairKey(ent, "target", target, MAX_EPAIRKEY))
+			{
+				botimport.Print(PRT_ERROR, "misc_teleporter at %1.0f %1.0f %1.0f without target\n",
+									origin[0], origin[1], origin[2]);
+				continue;
+			} //end if
+			VectorSet(mins, -8, -8, 8);
+			VectorSet(maxs, 8, 8, 24);
+			q2teleporter = true;
+		} //end else if
 		else
 		{
 			continue;
@@ -2991,8 +3026,29 @@ void AAS_Reachability_Teleport(void)
 		} //end if
 		//
 		area2num = AAS_PointAreaNum(destorigin);
+		//a Quake II teleporter drops the player at the destination without
+		//velocity (g_misc.c teleporter_touch)
+		if (q2teleporter)
+		{
+			destorigin[2] += 24;
+			VectorCopy(destorigin, end);
+			end[2] -= 100;
+			trace = AAS_TraceClientBBox(destorigin, end, PRESENCE_CROUCH, -1);
+			if (trace.startsolid)
+			{
+				botimport.Print(PRT_ERROR, "teleporter destination (%s) in solid\n", target);
+				continue;
+			} //end if
+			VectorCopy(trace.endpos, destorigin);
+			area2num = AAS_PointAreaNum(destorigin);
+			if (!area2num)
+			{
+				botimport.Print(PRT_ERROR, "teleporter destination (%s) not in an area\n", target);
+				continue;
+			} //end if
+		} //end if
 		//if not teleported into a teleporter or into a jumppad
-		if (!AAS_AreaTeleporter(area2num) && !AAS_AreaJumpPad(area2num))
+		else if (!AAS_AreaTeleporter(area2num) && !AAS_AreaJumpPad(area2num))
 		{
 			VectorCopy(destorigin, end);
 			end[2] -= 64;
@@ -3054,7 +3110,14 @@ void AAS_Reachability_Teleport(void)
 		for (link = areas; link; link = link->next_area)
 		{
 			//if (!AAS_AreaGrounded(link->areanum)) continue;
-			if (!AAS_AreaTeleporter(link->areanum)) continue;
+			//a Quake II teleporter has no area of its own: take the floor it
+			//stands on
+			if (q2teleporter)
+			{
+				if (!AAS_AreaGrounded(link->areanum)) continue;
+				if (link->areanum == area2num) continue;
+			} //end if
+			else if (!AAS_AreaTeleporter(link->areanum)) continue;
 			//
 			area1num = link->areanum;
 			//create a new reachability link
@@ -3104,21 +3167,21 @@ void AAS_Reachability_Elevator(void)
 	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
 	{
 		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
-		if (!strcmp(classname, "func_plat"))
+		if (!strcmp(classname, "func_plat") || !strcmp(classname, "func_plat2"))
 		{
 #ifdef REACH_DEBUG
 			Log_Write("found func plat\r\n");
 #endif //REACH_DEBUG
 			if (!AAS_ValueForBSPEpairKey(ent, "model", model, MAX_EPAIRKEY))
 			{
-				botimport.Print(PRT_ERROR, "func_plat without model\n");
+				botimport.Print(PRT_ERROR, "%s without model\n", classname);
 				continue;
 			} //end if
 			//get the model number, and skip the leading *
 			modelnum = atoi(model+1);
 			if (modelnum <= 0)
 			{
-				botimport.Print(PRT_ERROR, "func_plat with invalid model number\n");
+				botimport.Print(PRT_ERROR, "%s with invalid model number\n", classname);
 				continue;
 			} //end if
 			//get the mins, maxs and origin of the model
@@ -3132,13 +3195,24 @@ void AAS_Reachability_Elevator(void)
 			VectorCopy(origin, pos2);
 			//get the lip of the plat
 			AAS_FloatForBSPEpairKey(ent, "lip", &lip);
-			if (!lip) lip = 8;
 			//get the movement height of the plat
 			AAS_FloatForBSPEpairKey(ent, "height", &height);
-			if (!height) height = (maxs[2] - mins[2]) - lip;
 			//get the speed of the plat
 			AAS_FloatForBSPEpairKey(ent, "speed", &speed);
 			if (!speed) speed = 200;
+			if (!strcmp(classname, "func_plat2"))
+			{
+				//Rogue's SP_func_plat2: no default lip, the lip counts against
+				//the height, and twice the speed in deathmatch
+				if (height) height -= lip;
+				else height = (maxs[2] - mins[2]) - lip;
+				speed *= 2;
+			} //end if
+			else
+			{
+				if (!lip) lip = 8;
+				if (!height) height = (maxs[2] - mins[2]) - lip;
+			} //end else
 			//get bottom position below pos1
 			pos2[2] -= height;
 			//
@@ -3632,6 +3706,444 @@ void AAS_Reachability_FuncBobbing(void)
 	} //end for
 } //end of the function AAS_Reachability_FuncBobbing
 //===========================================================================
+// Q2: func_train paths.  A train moves its mins corner from path_corner to
+// path_corner at a constant speed (g_func.c train_next; "speed", default
+// 100), waits at a corner its "wait" and jumps to a corner with spawnflags 1.
+// Trains that start on (no targetname) and go round a closed loop can be
+// ridden: AAS_Reachability_FuncTrain (bspc) makes the rides and
+// BotTravel_FuncTrain (be_ai_move.c) gets on and off.  Trains of the same
+// size on the same loop share one path: a bot takes whichever comes first.
+//===========================================================================
+static aas_trainpath_t aas_trainpaths[MAX_TRAINPATHS];
+static int aas_numtrainpaths;
+static int aas_trainpathloaded;
+
+static int AAS_FindPathCorner(char *targetname)
+{
+	int ent;
+	char classname[MAX_EPAIRKEY], name[MAX_EPAIRKEY];
+
+	if (!targetname[0]) return 0;
+	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
+	{
+		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		if (strcmp(classname, "path_corner")) continue;
+		if (!AAS_ValueForBSPEpairKey(ent, "targetname", name, MAX_EPAIRKEY)) continue;
+		if (!strcmp(name, targetname)) return ent;
+	} //end for
+	return 0;
+} //end of the function AAS_FindPathCorner
+
+void AAS_InitTrainPaths(void)
+{
+	int ent, modelnum, spawnflags, corners[MAX_TRAINCORNERS * 2], numcorners;
+	int i, j, k, loopstart, c, rot, same;
+	char classname[MAX_EPAIRKEY], model[MAX_EPAIRKEY], target[MAX_EPAIRKEY];
+	float speed, d;
+	vec3_t mins, maxs, size, angles = {0, 0, 0};
+	aas_trainpath_t *path, loop;
+
+	aas_numtrainpaths = 0;
+	aas_trainpathloaded = true;
+	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
+	{
+		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		if (strcmp(classname, "func_train")) continue;
+		if (!AAS_ValueForBSPEpairKey(ent, "model", model, MAX_EPAIRKEY)) continue;
+		modelnum = atoi(model+1);
+		if (modelnum <= 0) continue;
+		//a train that is triggered may stand still
+		spawnflags = 0;
+		AAS_IntForBSPEpairKey(ent, "spawnflags", &spawnflags);
+		if (AAS_ValueForBSPEpairKey(ent, "targetname", target, MAX_EPAIRKEY) && !(spawnflags & 1)) continue;
+		speed = 0;
+		AAS_FloatForBSPEpairKey(ent, "speed", &speed);
+		if (speed <= 0) speed = 100;
+		AAS_BSPModelMinsMaxsOrigin(modelnum, angles, mins, maxs, NULL);
+		VectorSubtract(maxs, mins, size);
+		//follow the path corners until one comes round again
+		if (!AAS_ValueForBSPEpairKey(ent, "target", target, MAX_EPAIRKEY)) continue;
+		numcorners = 0;
+		loopstart = -1;
+		c = AAS_FindPathCorner(target);
+		while (c && numcorners < MAX_TRAINCORNERS * 2)
+		{
+			for (i = 0; i < numcorners; i++)
+			{
+				if (corners[i] == c) break;
+			} //end for
+			if (i < numcorners)
+			{
+				loopstart = i;
+				break;
+			} //end if
+			corners[numcorners++] = c;
+			if (!AAS_ValueForBSPEpairKey(c, "target", target, MAX_EPAIRKEY)) break;
+			c = AAS_FindPathCorner(target);
+		} //end while
+		//only trains going round a loop
+		if (loopstart < 0 || numcorners - loopstart < 2 || numcorners - loopstart > MAX_TRAINCORNERS) continue;
+		//the loop from its corner with the lowest entity number, so trains
+		//on the same loop find each other
+		rot = loopstart;
+		for (i = loopstart; i < numcorners; i++)
+		{
+			if (corners[i] < corners[rot]) rot = i;
+		} //end for
+		Com_Memset(&loop, 0, sizeof(loop));
+		loop.numcorners = numcorners - loopstart;
+		for (i = 0; i < loop.numcorners; i++)
+		{
+			k = corners[loopstart + (rot - loopstart + i) % loop.numcorners];
+			loop.cornerent[i] = k;
+			AAS_VectorForBSPEpairKey(k, "origin", loop.corner[i]);
+			AAS_FloatForBSPEpairKey(k, "wait", &loop.wait[i]);
+			spawnflags = 0;
+			AAS_IntForBSPEpairKey(k, "spawnflags", &spawnflags);
+			loop.teleport[i] = spawnflags & 1;
+		} //end for
+		//path length and time once round
+		loop.speed = speed;
+		loop.length = 0;
+		loop.looptime = 0;
+		for (i = 0; i < loop.numcorners; i++)
+		{
+			loop.dist[i] = loop.length;
+			j = (i + 1) % loop.numcorners;
+			//the train jumps to a teleport corner
+			if (!loop.teleport[j])
+			{
+				d = Distance(loop.corner[i], loop.corner[j]);
+				loop.length += d;
+				loop.looptime += d / speed;
+			} //end if
+			if (loop.wait[j] > 0) loop.looptime += loop.wait[j];
+		} //end for
+		loop.dist[loop.numcorners] = loop.length;
+		VectorCopy(size, loop.size);
+		//a path already found for this loop and size
+		for (i = 0; i < aas_numtrainpaths; i++)
+		{
+			path = &aas_trainpaths[i];
+			if (path->numcorners != loop.numcorners || path->speed != loop.speed) continue;
+			if (!VectorCompare(path->size, loop.size)) continue;
+			same = true;
+			for (j = 0; j < loop.numcorners; j++)
+			{
+				if (path->cornerent[j] != loop.cornerent[j]) same = false;
+			} //end for
+			if (same) break;
+		} //end for
+		if (i >= aas_numtrainpaths)
+		{
+			if (aas_numtrainpaths >= MAX_TRAINPATHS) continue;
+			aas_trainpaths[aas_numtrainpaths++] = loop;
+		} //end if
+		path = &aas_trainpaths[i];
+		if (path->numtrains < MAX_PATHTRAINS) path->trainmodel[path->numtrains++] = modelnum;
+	} //end for
+} //end of the function AAS_InitTrainPaths
+
+aas_trainpath_t *AAS_TrainPathForModel(int modelnum)
+{
+	int i, j;
+
+	if (!aas_trainpathloaded) AAS_InitTrainPaths();
+	for (i = 0; i < aas_numtrainpaths; i++)
+	{
+		for (j = 0; j < aas_trainpaths[i].numtrains; j++)
+		{
+			if (aas_trainpaths[i].trainmodel[j] == modelnum) return &aas_trainpaths[i];
+		} //end for
+	} //end for
+	return NULL;
+} //end of the function AAS_TrainPathForModel
+
+void AAS_TrainPathPoint(aas_trainpath_t *path, float pos, vec3_t mins)
+{
+	int i, j;
+	float frac;
+
+	pos = fmod(pos, path->length);
+	if (pos < 0) pos += path->length;
+	for (i = 0; i < path->numcorners; i++)
+	{
+		if (pos < path->dist[i+1] || i == path->numcorners - 1) break;
+	} //end for
+	j = (i + 1) % path->numcorners;
+	if (path->dist[i+1] - path->dist[i] > 0.1) frac = (pos - path->dist[i]) / (path->dist[i+1] - path->dist[i]);
+	else frac = 0;
+	if (frac > 1) frac = 1;
+	mins[0] = path->corner[i][0] + frac * (path->corner[j][0] - path->corner[i][0]);
+	mins[1] = path->corner[i][1] + frac * (path->corner[j][1] - path->corner[i][1]);
+	mins[2] = path->corner[i][2] + frac * (path->corner[j][2] - path->corner[i][2]);
+} //end of the function AAS_TrainPathPoint
+
+float AAS_TrainPathPos(aas_trainpath_t *path, vec3_t mins, float guess)
+{
+	int i, j;
+	float best, bestpos, len, t, d, off, bestoff;
+	vec3_t dir, v, p;
+
+	best = 999999;
+	bestpos = 0;
+	bestoff = 999999;
+	for (i = 0; i < path->numcorners; i++)
+	{
+		j = (i + 1) % path->numcorners;
+		if (path->teleport[j]) continue;
+		VectorSubtract(path->corner[j], path->corner[i], dir);
+		len = VectorNormalize(dir);
+		VectorSubtract(mins, path->corner[i], v);
+		t = DotProduct(v, dir);
+		if (t < 0) t = 0;
+		if (t > len) t = len;
+		VectorMA(path->corner[i], t, dir, p);
+		d = Distance(p, mins);
+		//a train going to and fro is on two segments at once: the one
+		//nearest the guessed path position
+		off = 0;
+		if (guess >= 0)
+		{
+			off = fabs(path->dist[i] + t - guess);
+			if (off > 0.5 * path->length) off = path->length - off;
+		} //end if
+		if (d < best - 1 || (d < best + 1 && off < bestoff))
+		{
+			best = d;
+			bestoff = off;
+			bestpos = path->dist[i] + t;
+		} //end if
+	} //end for
+	return bestpos;
+} //end of the function AAS_TrainPathPos
+
+float AAS_TrainPathTime(aas_trainpath_t *path, float from, float to)
+{
+	int i;
+	float dist, t, d;
+
+	//how far along the path from "from" to "to"
+	dist = fmod(to - from, path->length);
+	if (dist < 0) dist += path->length;
+	t = dist / path->speed;
+	//and the waits at the corners on the way
+	for (i = 0; i < path->numcorners; i++)
+	{
+		if (path->wait[i] <= 0) continue;
+		d = fmod(path->dist[i] - from, path->length);
+		if (d < 0) d += path->length;
+		if (d > 0 && d < dist) t += path->wait[i];
+	} //end for
+	return t;
+} //end of the function AAS_TrainPathTime
+
+//a player's origin in the way of the trains: in the space they sweep, or
+//where a player's box would touch it (grow 16)
+static int AAS_InTrainPath(aas_trainpath_t *path, vec3_t point, float grow)
+{
+	float pos;
+	vec3_t mins;
+
+	for (pos = 0; pos < path->length; pos += 8)
+	{
+		AAS_TrainPathPoint(path, pos, mins);
+		if (point[0] < mins[0] - grow || point[0] > mins[0] + path->size[0] + grow) continue;
+		if (point[1] < mins[1] - grow || point[1] > mins[1] + path->size[1] + grow) continue;
+		if (point[2] < mins[2] - 32 || point[2] > mins[2] + path->size[2] + 24) continue;
+		return true;
+	} //end for
+	return false;
+} //end of the function AAS_InTrainPath
+
+//a clear way on or off a train: over to above the end, then down to it
+static int AAS_TrainStepClear(vec3_t start, vec3_t end, float maxhordist)
+{
+	vec3_t mid;
+	aas_trace_t trace;
+
+	VectorSubtract(end, start, mid);
+	mid[2] = 0;
+	if (VectorLength(mid) > maxhordist) return false;
+	VectorCopy(end, mid);
+	if (start[2] > mid[2]) mid[2] = start[2];
+	trace = AAS_TraceClientBBox(start, mid, PRESENCE_NORMAL, -1);
+	if (trace.startsolid || trace.fraction < 1) return false;
+	trace = AAS_TraceClientBBox(mid, end, PRESENCE_NORMAL, -1);
+	if (trace.startsolid || trace.fraction < 1) return false;
+	return true;
+} //end of the function AAS_TrainStepClear
+
+//where a bot that misses the train falls: into lava or slime is no ride
+static int AAS_TrainMissSafe(vec3_t point)
+{
+	int areanum;
+	vec3_t end;
+	aas_trace_t trace;
+
+	VectorCopy(point, end);
+	end[2] -= 4096;
+	trace = AAS_TraceClientBBox(point, end, PRESENCE_NORMAL, -1);
+	VectorCopy(trace.endpos, end);
+	end[2] += 8;
+	areanum = AAS_PointAreaNum(end);
+	//nowhere to land that the AAS knows is no safer
+	if (!areanum) return false;
+	return !AAS_AreaLava(areanum) && !AAS_AreaSlime(areanum);
+} //end of the function AAS_TrainMissSafe
+
+//the top of a train with its mins at the given point, where a rider's origin is
+static void AAS_TrainFacePoints(aas_trainpath_t *path, vec3_t mins, vec3_t *points, aas_plane_t *plane)
+{
+	float z;
+
+	//2 under where the rider's origin is: over a train in a tunnel as high
+	//as a rider (q2dm8) that is the top of the AAS space
+	z = mins[2] + path->size[2] + 22;
+	VectorSet(points[0], mins[0] + path->size[0], mins[1] + path->size[1], z);
+	VectorSet(points[1], mins[0] + path->size[0], mins[1], z);
+	VectorSet(points[2], mins[0], mins[1], z);
+	VectorSet(points[3], mins[0], mins[1] + path->size[1], z);
+	VectorSet(plane->normal, 0, 0, 1);
+	plane->dist = z;
+} //end of the function AAS_TrainFacePoints
+
+#define TRAIN_SAMPLE		16
+#define MAX_TRAINSAMPLES	4096
+
+void AAS_Reachability_FuncTrain(void)
+{
+	int p, i, j, k, numsamples, n, numreach;
+	float ridetime, waittime, besttime;
+	vec3_t mins, top, facepoints[4], dir, wait;
+	aas_plane_t plane;
+	aas_trainpath_t *path;
+	aas_lreachability_t *boarding, *b, *a, *lreach, *next;
+	static aas_lreachability_t *offs[MAX_TRAINSAMPLES];
+	static byte rideok[MAX_TRAINSAMPLES], cut[MAX_TRAINSAMPLES];
+
+	AAS_InitTrainPaths();
+	numreach = 0;
+	for (p = 0; p < aas_numtrainpaths; p++)
+	{
+		path = &aas_trainpaths[p];
+		numsamples = (int) (path->length / TRAIN_SAMPLE);
+		if (numsamples > MAX_TRAINSAMPLES) numsamples = MAX_TRAINSAMPLES;
+		if (path->length > 65535) continue;
+		//a train comes by every looptime / numtrains
+		waittime = 0.5 * path->looptime / path->numtrains;
+		//where a rider fits on the train and where he can get off
+		for (i = 0; i < numsamples; i++)
+		{
+			AAS_TrainPathPoint(path, i * TRAIN_SAMPLE, mins);
+			VectorSet(top, mins[0] + 0.5 * path->size[0], mins[1] + 0.5 * path->size[1], mins[2] + path->size[2] + 22);
+			n = AAS_PointAreaNum(top);
+			rideok[i] = n && (AAS_AreaPresenceType(n) & PRESENCE_NORMAL);
+			offs[i] = NULL;
+			if (!rideok[i]) continue;
+			AAS_TrainFacePoints(path, mins, facepoints, &plane);
+			//never get off into the train's way: onto the track, not to its
+			//side (where the end is, 16 over the edge in the AAS)
+			for (a = AAS_FindFaceReachabilities(facepoints, 4, &plane, false); a; a = next)
+			{
+				next = a->next;
+				if (AAS_InTrainPath(path, aasworld.areas[a->areanum].center, 0) ||
+						!AAS_TrainStepClear(a->start, a->end, 96) || !AAS_TrainMissSafe(a->start))
+				{
+					AAS_FreeReachability(a);
+					continue;
+				} //end if
+				a->next = offs[i];
+				offs[i] = a;
+			} //end for
+		} //end for
+		//the train jumps to a teleport corner and leaves its rider behind
+		for (i = 0; i < numsamples; i++)
+		{
+			cut[i] = false;
+			for (j = 0; j < path->numcorners; j++)
+			{
+				if (!path->teleport[j]) continue;
+				if (path->dist[j] > (i - 1) * TRAIN_SAMPLE && path->dist[j] <= i * TRAIN_SAMPLE) cut[i] = true;
+			} //end for
+		} //end for
+		//from where the bots get on
+		for (i = 0; i < numsamples; i++)
+		{
+			if (!rideok[i]) continue;
+			AAS_TrainPathPoint(path, i * TRAIN_SAMPLE, mins);
+			AAS_TrainFacePoints(path, mins, facepoints, &plane);
+			boarding = AAS_FindFaceReachabilities(facepoints, 4, &plane, true);
+			for (b = boarding; b; b = next)
+			{
+				next = b->next;
+				//never wait in the train's way, and get on the train close by
+				if (AAS_InTrainPath(path, b->start, 16)) continue;
+				if (!AAS_TrainStepClear(b->start, b->end, 64)) continue;
+				//a bot that misses the train falls where it is not
+				if (!AAS_TrainMissSafe(b->end)) continue;
+				//wait back from the edge of the area, as for a func_bobbing
+				VectorSubtract(b->start, b->end, dir);
+				dir[2] = 0;
+				VectorNormalize(dir);
+				for (k = 24; k > 0; k -= 8)
+				{
+					VectorMA(b->start, k, dir, wait);
+					if (AAS_PointAreaNum(wait) == b->areanum && !AAS_InTrainPath(path, wait, 16)) break;
+				} //end for
+				if (k > 0) VectorCopy(wait, b->start);
+				//ride on until the rider does not fit any more
+				for (j = (i + 1) % numsamples; j != i && rideok[j] && !cut[j]; j = (j + 1) % numsamples)
+				{
+					for (a = offs[j]; a; a = a->next)
+					{
+						if (a->areanum == b->areanum) continue;
+						ridetime = AAS_TrainPathTime(path, i * TRAIN_SAMPLE, j * TRAIN_SAMPLE);
+						//the ride already known between these areas
+						besttime = 999999;
+						for (lreach = areareachability[b->areanum]; lreach; lreach = lreach->next)
+						{
+							if (lreach->traveltype != TRAVEL_FUNCTRAIN || lreach->areanum != a->areanum) continue;
+							besttime = lreach->traveltime;
+							break;
+						} //end for
+						if ((waittime + ridetime) * 100 + 100 >= besttime) continue;
+						if (!lreach)
+						{
+							lreach = AAS_AllocReachability();
+							if (!lreach) return;
+							lreach->next = areareachability[b->areanum];
+							areareachability[b->areanum] = lreach;
+							numreach++;
+						} //end if
+						lreach->areanum = a->areanum;
+						lreach->facenum = path->trainmodel[0];
+						lreach->edgenum = ((i * TRAIN_SAMPLE) << 16) | (j * TRAIN_SAMPLE);
+						VectorCopy(b->start, lreach->start);
+						VectorCopy(a->end, lreach->end);
+						lreach->traveltype = TRAVEL_FUNCTRAIN;
+						lreach->traveltime = (waittime + ridetime) * 100 + 100;
+					} //end for
+				} //end for
+			} //end for
+			for (b = boarding; b; b = next)
+			{
+				next = b->next;
+				AAS_FreeReachability(b);
+			} //end for
+		} //end for
+		for (i = 0; i < numsamples; i++)
+		{
+			for (a = offs[i]; a; a = next)
+			{
+				next = a->next;
+				AAS_FreeReachability(a);
+			} //end for
+		} //end for
+	} //end for
+	botimport.Print(PRT_MESSAGE, "%6d reach functrain (%d train paths)\n", numreach, aas_numtrainpaths);
+} //end of the function AAS_Reachability_FuncTrain
+//===========================================================================
 //
 // Parameter:			-
 // Returns:				-
@@ -4084,18 +4596,35 @@ void AAS_SetWeaponJumpAreaFlags(void)
 	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
 	{
 		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		//Q2: Gladiator's list (its be_aas_reach.c), with the mission pack items
 		if (
 			!strcmp(classname, "item_armor_body") ||
 			!strcmp(classname, "item_armor_combat") ||
-			!strcmp(classname, "item_health_mega") ||
+			!strcmp(classname, "item_power_screen") ||
+			!strcmp(classname, "item_power_shield") ||
 			!strcmp(classname, "weapon_grenadelauncher") ||
 			!strcmp(classname, "weapon_rocketlauncher") ||
-			!strcmp(classname, "weapon_lightning") ||
-			!strcmp(classname, "weapon_plasmagun") ||
+			!strcmp(classname, "weapon_hyperblaster") ||
 			!strcmp(classname, "weapon_railgun") ||
 			!strcmp(classname, "weapon_bfg") ||
+			!strcmp(classname, "weapon_boomer") ||
+			!strcmp(classname, "weapon_phalanx") ||
+			!strcmp(classname, "item_quadfire") ||
+			!strcmp(classname, "weapon_etf_rifle") ||
+			!strcmp(classname, "weapon_proxlauncher") ||
+			!strcmp(classname, "weapon_plasmabeam") ||
+			!strcmp(classname, "weapon_chainfist") ||
+			!strcmp(classname, "weapon_disintegrator") ||
+			!strcmp(classname, "item_ir_goggles") ||
+			!strcmp(classname, "item_double") ||
+			!strcmp(classname, "item_compass") ||
+			!strcmp(classname, "item_sphere_vengeance") ||
+			!strcmp(classname, "item_sphere_hunter") ||
+			!strcmp(classname, "item_sphere_defender") ||
+			!strcmp(classname, "item_doppleganger") ||
+			!strcmp(classname, "dm_tag_token") ||
+			!strcmp(classname, "item_health_mega") ||
 			!strcmp(classname, "item_quad") ||
-			!strcmp(classname, "item_regen") ||
 			!strcmp(classname, "item_invulnerability"))
 		{
 			if (AAS_VectorForBSPEpairKey(ent, "origin", origin))
@@ -4146,12 +4675,12 @@ void AAS_SetWeaponJumpAreaFlags(void)
 //===========================================================================
 int AAS_Reachability_WeaponJump(int area1num, int area2num)
 {
-	int face2num, i, n, ret, visualize;
-	float speed, zvel, hordist;
+	int face2num, i, k, n, ret, visualize;
+	float speed, zvel, hordist, hvel, airaccelerate;
 	aas_face_t *face2;
 	aas_area_t *area1, *area2;
 	aas_lreachability_t *lreach;
-	vec3_t areastart, facecenter, start, end, dir, cmdmove;// teststart;
+	vec3_t areastart, facecenter, start, end, dir, cmdmove, launch;// teststart;
 	vec3_t velocity;
 	aas_clientmove_t move;
 	aas_trace_t trace;
@@ -4199,35 +4728,49 @@ int AAS_Reachability_WeaponJump(int area1num, int area2num)
 			//get the rocket jump z velocity
 			if (n) zvel = AAS_BFGJumpZVelocity(areastart);
 			else zvel = AAS_RocketJumpZVelocity(areastart);
+			//Q2: where the bot is when the rocket explodes, with that z velocity
+			//(AAS_WeaponJumpZVelocity)
+			VectorCopy(areastart, launch);
+			launch[2] += 12.5;
 			//get the horizontal speed for the jump, if it isn't possible to calculate this
 			//speed (the jump is not possible) then there's no jump reachability created
-			ret = AAS_HorizontalVelocityForJump(zvel, areastart, facecenter, &speed);
+			ret = AAS_HorizontalVelocityForJump(zvel, launch, facecenter, &speed);
 			if (ret && speed < 300)
 			{
 				//direction towards the face center
-				VectorSubtract(facecenter, areastart, dir);
+				VectorSubtract(facecenter, launch, dir);
 				dir[2] = 0;
 				hordist = VectorNormalize(dir);
-				//if (hordist < 1.6 * (facecenter[2] - areastart[2]))
+				//Q2: the bot jumps from a stand; the 50 ms it still stands give
+				//it 150 at most towards the goal, and Q2's air control (as Q3's,
+				//PM_Accelerate with 1 in the air) the rest, which the global
+				//phys_airaccelerate 0 leaves out of the prediction
+				hvel = aassettings.phys_walkaccelerate * 0.05 * aassettings.phys_maxwalkvelocity;
+				if (hvel > speed) hvel = speed;
+				airaccelerate = aassettings.phys_airaccelerate;
+				aassettings.phys_airaccelerate = 1;
+				//the bot steers its flight; try air speeds from the one the jump
+				//needs on average up to the maximum
+				for (k = 0; k < 3; k++)
 				{
-					//get command movement
-					VectorScale(dir, speed, cmdmove);
-					VectorSet(velocity, 0, 0, zvel);
-					/*
-					//get command movement
-					VectorScale(dir, speed, velocity);
+					VectorScale(dir, speed + k * (300 - speed) / 2, cmdmove);
+					VectorScale(dir, hvel, velocity);
 					velocity[2] = zvel;
-					VectorSet(cmdmove, 0, 0, 0);
-					*/
 					//
-					AAS_PredictClientMovement(&move, -1, areastart, PRESENCE_NORMAL, true,
+					AAS_PredictClientMovement(&move, -1, launch, PRESENCE_NORMAL, false,
 												velocity, cmdmove, 30, 30, 0.1f,
 												SE_ENTERWATER|SE_ENTERSLIME|
 												SE_ENTERLAVA|SE_HITGROUNDDAMAGE|
 												SE_TOUCHJUMPPAD|SE_HITGROUND|SE_HITGROUNDAREA, area2num, visualize);
+					if (move.frames < 30 &&
+							!(move.stopevent & (SE_ENTERSLIME|SE_ENTERLAVA|SE_HITGROUNDDAMAGE))
+								&& (move.stopevent & (SE_HITGROUNDAREA|SE_TOUCHJUMPPAD))) break;
+				} //end for
+				aassettings.phys_airaccelerate = airaccelerate;
+				{
 					//if prediction time wasn't enough to fully predict the movement
 					//don't enter slime or lava and don't fall from too high
-					if (move.frames < 30 && 
+					if (move.frames < 30 &&
 							!(move.stopevent & (SE_ENTERSLIME|SE_ENTERLAVA|SE_HITGROUNDDAMAGE))
 								&& (move.stopevent & (SE_HITGROUNDAREA|SE_TOUCHJUMPPAD)))
 					{
@@ -4613,6 +5156,8 @@ int AAS_ContinueInitReachability(float time)
 		AAS_Reachability_Elevator();
 		//create func_bobbing reachabilities
 		AAS_Reachability_FuncBobbing();
+		//Q2: create func_train rides
+		AAS_Reachability_FuncTrain();
 		//
 #ifdef DEBUG
 		botimport.Print(PRT_MESSAGE, "%6d reach swim\n", reach_swim);

@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../game_q3/botlib.h"
 #include "../game_q3/be_aas.h"
 #include "../botlib/be_aas_def.h"
+#include "../botlib/be_aas_bsp.h"
 #include "../qcommon_q3/cm_public.h"
 
 //#define BSPC
@@ -301,6 +302,198 @@ void AAS_CalcReachAndClusters(struct quakefile_s *qf)
  * void* parameters to avoid Q2/Q3 type name conflicts. */
 void Q2_CM_LoadCollisionFromBSPGlobals(void);
 
+//===========================================================================
+// Q2 version: func_plat (and Rogue's func_plat2) is no AAS geometry (as in
+// id's bspc), so a plat's shaft is a hole down to the floor the plat sinks
+// into, and the upper floor
+// gets walk-off-ledge and jump reachabilities into it.  They land on the plat
+// or on whoever waits on it; stacked players block the rising plat, which
+// reverses and crushes the one at the bottom (q2ctf5).  Gladiator's AAS
+// priced these drops 3000, as falls that hurt.
+//===========================================================================
+static void Q2_AAS_PlatShaftDrops(void)
+{
+	int ent, modelnum, i, n;
+	char classname[MAX_EPAIRKEY], model[MAX_EPAIRKEY];
+	vec3_t mins, maxs, origin, angles = {0, 0, 0};
+	aas_reachability_t *reach;
+
+	n = 0;
+	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
+	{
+		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		if (strcmp(classname, "func_plat") && strcmp(classname, "func_plat2")) continue;
+		if (!AAS_ValueForBSPEpairKey(ent, "model", model, MAX_EPAIRKEY)) continue;
+		modelnum = atoi(model+1);
+		if (modelnum <= 0) continue;
+		//mins and maxs of the plat in its top position
+		AAS_BSPModelMinsMaxsOrigin(modelnum, angles, mins, maxs, origin);
+		for (i = 1; i < aasworld.reachabilitysize; i++)
+		{
+			reach = &aasworld.reachability[i];
+			if ((reach->traveltype & TRAVELTYPE_MASK) != TRAVEL_WALKOFFLEDGE &&
+				(reach->traveltype & TRAVELTYPE_MASK) != TRAVEL_JUMP) continue;
+			//from the plat's top level or higher down into the shaft
+			if (reach->start[2] < maxs[2] || reach->end[2] >= maxs[2]) continue;
+			if (reach->end[0] < mins[0] - 16 || reach->end[0] > maxs[0] + 16) continue;
+			if (reach->end[1] < mins[1] - 16 || reach->end[1] > maxs[1] + 16) continue;
+			reach->traveltime += 3000;
+			n++;
+		} //end for
+	} //end for
+	Log_Print("%6d reachabilities into plat shafts\n", n);
+} //end of the function Q2_AAS_PlatShaftDrops
+
+//===========================================================================
+// Q2 version: a func_rotating is no AAS geometry either, so the space it
+// sweeps is open floor to the AAS.  q2dm5's crusher (dmg 20000) turns over
+// the floor of its room, and the gallery above has walk-off-ledge
+// reachabilities down into it: the bots land on the arm or in its path.
+// Priced like the plat shaft drops.
+//===========================================================================
+static int Q2_InRotatingSweep(vec3_t point, vec3_t origin, int axis, float radius, float lo, float hi)
+{
+	int i;
+	float dist, bmin, bmax;
+	vec3_t d;
+
+	VectorSubtract(point, origin, d);
+	d[axis] = 0;
+	dist = 0;
+	for (i = 0; i < 3; i++) dist += d[i] * d[i];
+	if (dist >= (radius + 16) * (radius + 16)) return false;
+	//the player's bounding box along the axis
+	bmin = point[axis] + (axis == 2 ? -24 : -16);
+	bmax = point[axis] + (axis == 2 ? 32 : 16);
+	return bmax > lo && bmin < hi;
+} //end of the function Q2_InRotatingSweep
+
+static void Q2_AAS_RotatingDrops(void)
+{
+	int ent, modelnum, spawnflags, axis, i, j, n;
+	char classname[MAX_EPAIRKEY], model[MAX_EPAIRKEY];
+	vec3_t mins, maxs, origin, corner, angles = {0, 0, 0};
+	float radius, r;
+	aas_reachability_t *reach;
+
+	n = 0;
+	for (ent = AAS_NextBSPEntity(0); ent; ent = AAS_NextBSPEntity(ent))
+	{
+		if (!AAS_ValueForBSPEpairKey(ent, "classname", classname, MAX_EPAIRKEY)) continue;
+		if (strcmp(classname, "func_rotating")) continue;
+		if (!AAS_ValueForBSPEpairKey(ent, "model", model, MAX_EPAIRKEY)) continue;
+		modelnum = atoi(model+1);
+		if (modelnum <= 0) continue;
+		//the model is built around its rotation point, the "origin" key
+		AAS_BSPModelMinsMaxsOrigin(modelnum, angles, mins, maxs, NULL);
+		VectorClear(origin);
+		AAS_VectorForBSPEpairKey(ent, "origin", origin);
+		spawnflags = 0;
+		AAS_IntForBSPEpairKey(ent, "spawnflags", &spawnflags);
+		//the axis as Q2's SP_func_rotating picks it
+		if (spawnflags & 4) axis = 0;
+		else if (spawnflags & 8) axis = 1;
+		else axis = 2;
+		radius = 0;
+		for (j = 0; j < 8; j++)
+		{
+			corner[0] = (j & 1) ? maxs[0] : mins[0];
+			corner[1] = (j & 2) ? maxs[1] : mins[1];
+			corner[2] = (j & 4) ? maxs[2] : mins[2];
+			corner[axis] = 0;
+			r = VectorLength(corner);
+			if (r > radius) radius = r;
+		} //end for
+		for (i = 1; i < aasworld.reachabilitysize; i++)
+		{
+			reach = &aasworld.reachability[i];
+			if ((reach->traveltype & TRAVELTYPE_MASK) != TRAVEL_WALKOFFLEDGE &&
+				(reach->traveltype & TRAVELTYPE_MASK) != TRAVEL_JUMP) continue;
+			if (!Q2_InRotatingSweep(reach->end, origin, axis, radius,
+						origin[axis] + mins[axis], origin[axis] + maxs[axis])) continue;
+			if (Q2_InRotatingSweep(reach->start, origin, axis, radius,
+						origin[axis] + mins[axis], origin[axis] + maxs[axis])) continue;
+			reach->traveltime += 3000;
+			n++;
+		} //end for
+	} //end for
+	Log_Print("%6d reachabilities into func_rotating sweeps\n", n);
+} //end of the function Q2_AAS_RotatingDrops
+
+//===========================================================================
+// Q2 version: BotTravel_Jump takes its run-up inside the jump's start area
+// only.  With less than a movement frame of room (30 units at 300 ups) the
+// bot jumps from a stand: the jump frame has air acceleration only (Q2
+// PM_Accelerate with 1, 30 ups per frame), which carries it about 60 units
+// on level ground.  Jumps it cannot make that way are priced like the plat
+// shaft drops: on q2dm6 the ones off the ledge by the Railgun ended in the
+// lava 31 times out of 34.
+//===========================================================================
+static int Q2_StandingJumpReaches(vec3_t start, vec3_t end)
+{
+	int i;
+	float dist, dz, x, z, vx, vz, nx, nz, f;
+	vec3_t dir;
+
+	VectorSubtract(end, start, dir);
+	dz = dir[2];
+	dir[2] = 0;
+	dist = VectorLength(dir);
+	x = z = vx = 0;
+	vz = aassettings.phys_jumpvel;
+	for (i = 0; i < 40; i++)
+	{
+		vx += 0.1 * aassettings.phys_maxwalkvelocity;
+		if (vx > aassettings.phys_maxwalkvelocity) vx = aassettings.phys_maxwalkvelocity;
+		vz -= 0.1 * aassettings.phys_gravity;
+		nx = x + 0.1 * vx;
+		nz = z + 0.1 * vz;
+		if (nx >= dist)
+		{
+			f = (dist - x) / (nx - x);
+			return z + f * (nz - z) >= dz;
+		} //end if
+		if (vz < 0 && nz < dz) return false;
+		x = nx;
+		z = nz;
+	} //end for
+	return false;
+} //end of the function Q2_StandingJumpReaches
+
+static void Q2_AAS_StandingJumps(void)
+{
+	int areanum, i, n, room;
+	vec3_t hordir, p;
+	aas_reachability_t *reach;
+	aas_areasettings_t *settings;
+
+	n = 0;
+	for (areanum = 1; areanum < aasworld.numareas; areanum++)
+	{
+		settings = &aasworld.areasettings[areanum];
+		for (i = 0; i < settings->numreachableareas; i++)
+		{
+			reach = &aasworld.reachability[settings->firstreachablearea + i];
+			if ((reach->traveltype & TRAVELTYPE_MASK) != TRAVEL_JUMP) continue;
+			//BotTravel_Jump's run-up, away from the jump inside the start area
+			VectorSubtract(reach->start, reach->end, hordir);
+			hordir[2] = 0;
+			VectorNormalize(hordir);
+			for (room = 0; room < 80; room += 10)
+			{
+				VectorMA(reach->start, room + 10, hordir, p);
+				p[2] += 1;
+				if (AAS_PointAreaNum(p) != areanum) break;
+			} //end for
+			if (room >= 30) continue;
+			if (Q2_StandingJumpReaches(reach->start, reach->end)) continue;
+			reach->traveltime += 3000;
+			n++;
+		} //end for
+	} //end for
+	Log_Print("%6d jumps without a run-up\n", n);
+} //end of the function Q2_AAS_StandingJumps
+
 void Q2_AAS_CalcReachAndClusters(void)
 {
 	float time;
@@ -328,6 +521,11 @@ void Q2_AAS_CalcReachAndClusters(void)
 	LibVarSet("phys_watergravity",      "100");
 	LibVarSet("phys_airaccelerate",     "0");
 	LibVarSet("phys_swimaccelerate",    "10");
+	/* Gladiator's jump start cost (its be_aas_reach.c: 600 + distance time;
+	 * Q3's rs_startjump is 300): fewer routes over the gaps the bots fall
+	 * into (q2dm3, q2dm6).  Q2's air control is Q3's (PM_Accelerate with 1
+	 * in the air), no reason of its own. */
+	LibVarSet("rs_startjump",           "600");
 
 	//init physics settings (reads the LibVars set above)
 	AAS_InitSettings();
@@ -344,6 +542,9 @@ void Q2_AAS_CalcReachAndClusters(void)
 	AAS_InitReachability();
 	time = 0;
 	while(AAS_ContinueInitReachability(time)) time++;
+	Q2_AAS_PlatShaftDrops();
+	Q2_AAS_RotatingDrops();
+	Q2_AAS_StandingJumps();
 	//calculate clusters
 	AAS_InitClustering();
 } //end of the function Q2_AAS_CalcReachAndClusters

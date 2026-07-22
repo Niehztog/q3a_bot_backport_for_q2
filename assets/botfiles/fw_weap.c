@@ -39,6 +39,42 @@
 #define W_BFG10K            95
 #endif
 
+// Mission pack weapons. A bot file that does not weigh them gets the weight
+// of the base weapon playing the same part, as Gladiator weighed the
+// Ionripper like the HyperBlaster and the Phalanx like the Rocket Launcher:
+// the ETF Rifle and the Plasma Beam like the HyperBlaster too, the Prox
+// Launcher like the Grenade Launcher, the Disruptor like the Railgun. The
+// Trap and the Tesla get half the Grenade Launcher's, the Chainfist twice
+// the Blaster's. The $evalint defaults must only ever be used as a plain
+// "return W_X;" -- an $evalint inside another does not parse.
+#ifndef W_IONRIPPER
+#define W_IONRIPPER         W_HYPERBLASTER
+#endif
+#ifndef W_PHALANX
+#define W_PHALANX           W_ROCKETLAUNCHER
+#endif
+#ifndef W_TRAP
+#define W_TRAP              $evalint(W_GRENADELAUNCHER / 2)
+#endif
+#ifndef W_ETFRIFLE
+#define W_ETFRIFLE          W_HYPERBLASTER
+#endif
+#ifndef W_PROXLAUNCHER
+#define W_PROXLAUNCHER      W_GRENADELAUNCHER
+#endif
+#ifndef W_PLASMABEAM
+#define W_PLASMABEAM        W_HYPERBLASTER
+#endif
+#ifndef W_CHAINFIST
+#define W_CHAINFIST         $evalint(W_BLASTER * 2)
+#endif
+#ifndef W_DISRUPTOR
+#define W_DISRUPTOR         W_RAILGUN
+#endif
+#ifndef W_TESLA
+#define W_TESLA             $evalint(W_GRENADELAUNCHER / 2)
+#endif
+
 // Blaster: always owned, last resort.
 weight "Blaster"
 {
@@ -70,7 +106,7 @@ weight "Shotgun"
     }
 }
 
-// Super Shotgun: devastating close range.
+// Super Shotgun: devastating close range, 2 shells a shot.
 weight "Super Shotgun"
 {
     switch(INVENTORY_SUPERSHOTGUN)
@@ -80,7 +116,7 @@ weight "Super Shotgun"
         {
             switch(INVENTORY_SHELLS)
             {
-                case 1: return 0;
+                case 2: return 0;
                 default:
                 {
                     switch(ENEMY_HORIZONTAL_DIST)
@@ -225,7 +261,7 @@ weight "Railgun"
     }
 }
 
-// BFG10K: devastating but expensive.
+// BFG10K: devastating but expensive, 50 cells a shot.
 weight "BFG10K"
 {
     switch(INVENTORY_BFG10K)
@@ -235,8 +271,188 @@ weight "BFG10K"
         {
             switch(INVENTORY_CELLS)
             {
-                case 30: return 0;
+                case 50: return 0;
                 default: return W_BFG10K;
+            }
+        }
+    }
+}
+
+// ===== THE RECKONING =====
+
+// Ionripper: bouncing ion bolts, 2 cells a shot.
+weight "Ionripper"
+{
+    switch(INVENTORY_IONRIPPER)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_CELLS)
+            {
+                case 2: return 0;
+                default:
+                {
+                    switch(ENEMY_HORIZONTAL_DIST)
+                    {
+                        case 500: return W_IONRIPPER;
+                        default:  return $evalint(W_IONRIPPER * 5 / 10);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Phalanx: two plasma balls with splash, like the Rocket Launcher.
+weight "Phalanx"
+{
+    switch(INVENTORY_PHALANX)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_MAGSLUGS)
+            {
+                case 1: return 0;
+                default:
+                {
+                    switch(ENEMY_HORIZONTAL_DIST)
+                    {
+                        case 128: return $evalint(W_PHALANX * 5 / 10);
+                        default:  return W_PHALANX;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Trap: thrown, pulls in whoever comes within 256 units -- the thrower too.
+weight "Trap"
+{
+    switch(INVENTORY_TRAP)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(ENEMY_HORIZONTAL_DIST)
+            {
+                case 256: return 0;
+                default:  return W_TRAP;
+            }
+        }
+    }
+}
+
+// ===== GROUND ZERO =====
+
+// ETF Rifle: rapid flechettes that ignore normal armor.
+weight "ETF Rifle"
+{
+    switch(INVENTORY_ETFRIFLE)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_FLECHETTES)
+            {
+                case 1: return 0;
+                default:
+                {
+                    switch(ENEMY_HORIZONTAL_DIST)
+                    {
+                        case 600: return W_ETFRIFLE;
+                        default:  return $evalint(W_ETFRIFLE * 6 / 10);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Prox Launcher: lobbed mines that go off when someone comes near.
+weight "Prox Launcher"
+{
+    switch(INVENTORY_PROXLAUNCHER)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_PROX)
+            {
+                case 1: return 0;
+                default:
+                {
+                    switch(ENEMY_HORIZONTAL_DIST)
+                    {
+                        case 200: return $evalint(W_PROXLAUNCHER * 3 / 10);
+                        case 600: return W_PROXLAUNCHER;
+                        default:  return $evalint(W_PROXLAUNCHER * 5 / 10);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Plasma Beam: hitscan heat beam, 2 cells a frame.
+weight "Plasma Beam"
+{
+    switch(INVENTORY_PLASMABEAM)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_CELLS)
+            {
+                case 2: return 0;
+                default: return W_PLASMABEAM;
+            }
+        }
+    }
+}
+
+// Chainfist: melee, needs no ammo. The AI closes in with it (WP_GAUNTLET in
+// botlib/ai_q2_compat.h), so by default it weighs just twice the Blaster.
+weight "Chainfist"
+{
+    switch(INVENTORY_CHAINFIST)
+    {
+        case 1: return 0;
+        default: return W_CHAINFIST;
+    }
+}
+
+// Disruptor: tracker that homes in on the target it was fired at.
+weight "Disruptor"
+{
+    switch(INVENTORY_DISRUPTOR)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(INVENTORY_ROUNDS)
+            {
+                case 1: return 0;
+                default: return W_DISRUPTOR;
+            }
+        }
+    }
+}
+
+// Tesla: thrown, zaps everyone within 128 units -- the thrower too.
+weight "Tesla"
+{
+    switch(INVENTORY_TESLA)
+    {
+        case 1: return 0;
+        default:
+        {
+            switch(ENEMY_HORIZONTAL_DIST)
+            {
+                case 200: return 0;
+                default:  return W_TESLA;
             }
         }
     }

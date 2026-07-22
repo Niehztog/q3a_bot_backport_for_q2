@@ -4,10 +4,6 @@
 #include "p_lag.h"
 #endif //CLIENTLAG
 
-#ifdef BOT
-#include "bl_chat.h"
-#endif
-
 
 /*
 ======================================================================
@@ -103,10 +99,6 @@ void BeginIntermission (edict_t *targ)
 
 	level.intermissiontime = level.time;
 	level.changemap = targ->map;
-
-#ifdef BOT
-	BotChat_OnEndLevel();
-#endif
 
 	if (strstr(level.changemap, "*"))
 	{

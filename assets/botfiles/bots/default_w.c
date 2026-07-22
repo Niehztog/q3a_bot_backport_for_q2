@@ -6,39 +6,33 @@
 // The fuzzy switch system gates each weapon's desirability score on
 // inventory availability.  Syntax:
 //
-//   switch(N) {           // check inventory slot N directly
-//       case X: return Y;  // inventory[N] < X  → return Y (first match wins)
-//       default: return W; // otherwise          → return W
+//   switch(N) {           // check inventory slot N
+//       case X: return Y;  // inventory[N] < X  -> Y (first match wins)
+//       default: return W; // otherwise          -> W
 //   }
 //
-// NOTE: The parser (be_ai_weight.c ReadFuzzySeperators_r) only understands
-// switch(N) — NOT "switch inventory(N)".  Always use the plain switch(N) form.
+// N is a slot number from inv.h; the parser (be_ai_weight.c
+// ReadFuzzySeperators_r) only understands switch(N), not
+// "switch inventory(N)".
 //
 // Weapons with ammo use a nested switch: outer checks the weapon slot,
-// inner checks the ammo slot.  Both must be >= 1 to return a positive score.
+// inner checks the ammo slot against the ammo one shot takes.
 //
-// Range-aware selection uses inventory slots 200 and 201:
-//   200 = ENEMY_HORIZONTAL_DIST  (set from bc->enemy_hdist in be_interface_q2.c)
-//   201 = ENEMY_HEIGHT           (set from bc->enemy_height)
-// When no enemy is visible, these slots hold 9999/0 so the innermost
-// "default" branch (max power, any range) is taken.
-//
-// Inventory indices (from g_items.c itemlist[], index 0 = null slot):
-//   7=Blaster  8=Shotgun  9=SuperShotgun  10=Machinegun  11=Chaingun
-//   12=ammo_grenades  13=GrenadeLauncher  14=RocketLauncher
-//   15=HyperBlaster  16=Railgun  17=BFG10K
-//   18=Shells  19=Bullets  20=Cells  21=Rockets  22=Slugs
+// Range-aware selection uses ENEMY_HORIZONTAL_DIST (slot 200), which the AI
+// sets from the enemy's position before it chooses a weapon to fight with.
+
+#include "inv.h"
 
 weight "Blaster"
     return 10;
 
 // Shotgun: excellent close range (< 200), decent medium (< 500), poor far.
 weight "Shotgun"
-    switch(8) {
+    switch(INVENTORY_SHOTGUN) {
         case 1: return 0;
-        default: switch(18) {
+        default: switch(INVENTORY_SHELLS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 200: return 340;
                 case 500: return 230;
                 default:  return 80;
@@ -47,12 +41,13 @@ weight "Shotgun"
     }
 
 // Super Shotgun: great close (< 200), good medium (< 400), poor far.
+// Two shells a shot.
 weight "Super Shotgun"
-    switch(9) {
+    switch(INVENTORY_SUPERSHOTGUN) {
         case 1: return 0;
-        default: switch(18) {
-            case 1: return 0;
-            default: switch(200) {
+        default: switch(INVENTORY_SHELLS) {
+            case 2: return 0;
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 200: return 400;
                 case 400: return 280;
                 default:  return 60;
@@ -62,11 +57,11 @@ weight "Super Shotgun"
 
 // Machinegun: usable at all ranges, best at medium.
 weight "Machinegun"
-    switch(10) {
+    switch(INVENTORY_MACHINEGUN) {
         case 1: return 0;
-        default: switch(19) {
+        default: switch(INVENTORY_BULLETS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 600: return 250;
                 default:  return 190;
             }
@@ -75,11 +70,11 @@ weight "Machinegun"
 
 // Chaingun: strong close/medium, weaker far.
 weight "Chaingun"
-    switch(11) {
+    switch(INVENTORY_CHAINGUN) {
         case 1: return 0;
-        default: switch(19) {
+        default: switch(INVENTORY_BULLETS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 400: return 370;
                 case 700: return 270;
                 default:  return 150;
@@ -87,18 +82,19 @@ weight "Chaingun"
         }
     }
 
-// Hand grenades: hold-and-release not implemented in the adapter.
+// Hand grenades: not thrown. weapons.c marks them fire-on-release like the
+// Trap and the Tesla, so a weight here is all it would take.
 weight "Grenades"
     return 0;
 
 // Grenade Launcher: ideal at 100-450 units; dangerous at < 100 (self-damage);
 // poor at > 450 (arc trajectory gives enemy too much dodge time).
 weight "Grenade Launcher"
-    switch(13) {
+    switch(INVENTORY_GRENADELAUNCHER) {
         case 1: return 0;
-        default: switch(12) {
+        default: switch(INVENTORY_GRENADES) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 100: return 80;
                 case 450: return 360;
                 default:  return 100;
@@ -109,11 +105,11 @@ weight "Grenade Launcher"
 // Rocket Launcher: dangerous at < 100 (self-damage); excellent 100-600;
 // still usable at long range.
 weight "Rocket Launcher"
-    switch(14) {
+    switch(INVENTORY_ROCKETLAUNCHER) {
         case 1: return 0;
-        default: switch(21) {
+        default: switch(INVENTORY_ROCKETS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 100: return 150;
                 case 600: return 530;
                 default:  return 260;
@@ -123,11 +119,11 @@ weight "Rocket Launcher"
 
 // HyperBlaster: great at close/medium (< 500), lower at long range.
 weight "HyperBlaster"
-    switch(15) {
+    switch(INVENTORY_HYPERBLASTER) {
         case 1: return 0;
-        default: switch(20) {
+        default: switch(INVENTORY_CELLS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 500: return 390;
                 default:  return 210;
             }
@@ -137,11 +133,11 @@ weight "HyperBlaster"
 // Railgun: hitscan — excellent at all ranges; even better at long range
 // where other weapons are weak.
 weight "Railgun"
-    switch(16) {
+    switch(INVENTORY_RAILGUN) {
         case 1: return 0;
-        default: switch(22) {
+        default: switch(INVENTORY_SLUGS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 250: return 360;
                 default:  return 530;
             }
@@ -149,12 +145,13 @@ weight "Railgun"
     }
 
 // BFG: devastating at close/medium (< 500); too slow at long range.
+// 50 cells a shot.
 weight "BFG10K"
-    switch(17) {
+    switch(INVENTORY_BFG10K) {
         case 1: return 0;
-        default: switch(20) {
-            case 1: return 0;
-            default: switch(200) {
+        default: switch(INVENTORY_CELLS) {
+            case 50: return 0;
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 100: return 80;
                 case 500: return 650;
                 default:  return 210;
@@ -162,45 +159,54 @@ weight "BFG10K"
         }
     }
 
-// Rogue / Xatrix mission pack extras.
-// Inventory indices from g_items.c itemlist[] order (confirmed via awk):
-//   50=Boomer  51=Phalanx  53=ammo_magslug  56=ETF Rifle  57=ProxLauncher
-//   58=PlasmaBeam  59=Chainfist  60=Disintegrator
-//   20=Cells  61=ammo_flechettes  62=ammo_prox  65=ammo_disruptor
+// ----- The Reckoning -----
 
 // Phalanx: mid-range plasma cannon.
 weight "Phalanx"
-    switch(51) {
+    switch(INVENTORY_PHALANX) {
         case 1: return 0;
-        default: switch(53) {
+        default: switch(INVENTORY_MAGSLUGS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 500: return 430;
                 default:  return 250;
             }
         }
     }
 
-// Boomer: close-range energy weapon.
-weight "Boomer"
-    switch(50) {
+// Ionripper: close-range energy weapon, 2 cells a shot.
+weight "Ionripper"
+    switch(INVENTORY_IONRIPPER) {
         case 1: return 0;
-        default: switch(20) {
-            case 1: return 0;
-            default: switch(200) {
+        default: switch(INVENTORY_CELLS) {
+            case 2: return 0;
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 350: return 360;
                 default:  return 180;
             }
         }
     }
 
+// Trap: thrown; pulls in whoever comes within 256 units, the thrower too.
+weight "Trap"
+    switch(INVENTORY_TRAP) {
+        case 1: return 0;
+        default: switch(ENEMY_HORIZONTAL_DIST) {
+            case 256: return 0;
+            case 700: return 150;
+            default:  return 40;
+        }
+    }
+
+// ----- Ground Zero -----
+
 // Disruptor: long-range precision weapon.
 weight "Disruptor"
-    switch(60) {
+    switch(INVENTORY_DISRUPTOR) {
         case 1: return 0;
-        default: switch(65) {
+        default: switch(INVENTORY_ROUNDS) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 300: return 300;
                 default:  return 480;
             }
@@ -209,24 +215,24 @@ weight "Disruptor"
 
 // ETF Rifle: medium-long range flechette weapon.
 weight "ETF Rifle"
-    switch(56) {
+    switch(INVENTORY_ETFRIFLE) {
         case 1: return 0;
-        default: switch(61) {
+        default: switch(INVENTORY_FLECHETTES) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 600: return 380;
                 default:  return 310;
             }
         }
     }
 
-// Plasma Beam: close/medium range sustained beam.
+// Plasma Beam: close/medium range sustained beam, 2 cells a frame.
 weight "Plasma Beam"
-    switch(58) {
+    switch(INVENTORY_PLASMABEAM) {
         case 1: return 0;
-        default: switch(20) {
-            case 1: return 0;
-            default: switch(200) {
+        default: switch(INVENTORY_CELLS) {
+            case 2: return 0;
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 500: return 400;
                 default:  return 200;
             }
@@ -235,11 +241,11 @@ weight "Plasma Beam"
 
 // Prox Launcher: deploys proximity mines; medium range only.
 weight "Prox Launcher"
-    switch(57) {
+    switch(INVENTORY_PROXLAUNCHER) {
         case 1: return 0;
-        default: switch(62) {
+        default: switch(INVENTORY_PROX) {
             case 1: return 0;
-            default: switch(200) {
+            default: switch(ENEMY_HORIZONTAL_DIST) {
                 case 150: return 80;
                 case 500: return 330;
                 default:  return 120;
@@ -247,12 +253,23 @@ weight "Prox Launcher"
         }
     }
 
+// Tesla: thrown; zaps everyone within 128 units, the thrower too.
+weight "Tesla"
+    switch(INVENTORY_TESLA) {
+        case 1: return 0;
+        default: switch(ENEMY_HORIZONTAL_DIST) {
+            case 200: return 0;
+            case 600: return 150;
+            default:  return 40;
+        }
+    }
+
 // Chainfist: melee — only useful at point-blank range.
 weight "Chainfist"
-    switch(59) {
+    switch(INVENTORY_CHAINFIST) {
         case 1: return 0;
-        default: switch(200) {
+        default: switch(ENEMY_HORIZONTAL_DIST) {
             case 80: return 300;
-            default: return 30;
+            default:  return 30;
         }
     }

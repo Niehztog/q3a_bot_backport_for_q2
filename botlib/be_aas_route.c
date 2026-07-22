@@ -159,6 +159,7 @@ void AAS_InitTravelFlagFromType(void)
 	aasworld.travelflagfortype[TRAVEL_STRAFEJUMP] = TFL_STRAFEJUMP;
 	aasworld.travelflagfortype[TRAVEL_JUMPPAD] = TFL_JUMPPAD;
 	aasworld.travelflagfortype[TRAVEL_FUNCBOB] = TFL_FUNCBOB;
+	aasworld.travelflagfortype[TRAVEL_FUNCTRAIN] = TFL_FUNCTRAIN;
 } //end of the function AAS_InitTravelFlagFromType
 //===========================================================================
 //
@@ -1189,6 +1190,7 @@ void AAS_InitReachabilityAreas(void)
 			//and from entity center to reach->end
 			case TRAVEL_ELEVATOR: break;
 			case TRAVEL_FUNCBOB: break;
+			case TRAVEL_FUNCTRAIN: break;
 
 			//no areas in between
 			case TRAVEL_WALK: break;
@@ -1616,6 +1618,10 @@ int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, int goalareanum, int tra
 		} //end if
 		return false;
 	} //end if
+	if (!aasworld.areasettings[areanum].numreachableareas || !aasworld.areasettings[goalareanum].numreachableareas)
+	{
+		return false;
+	} //end if
 	// make sure the routing cache doesn't grow to large
 	while(AvailableMemory() < 1 * 1024 * 1024) {
 		if (!AAS_FreeOldestCache()) break;
@@ -1988,6 +1994,10 @@ int AAS_NextModelReachability(int num, int modelnum)
 		else if ((aasworld.reachability[i].traveltype & TRAVELTYPE_MASK) == TRAVEL_FUNCBOB)
 		{
 			if ((aasworld.reachability[i].facenum & 0x0000FFFF) == modelnum) return i;
+		} //end if
+		else if ((aasworld.reachability[i].traveltype & TRAVELTYPE_MASK) == TRAVEL_FUNCTRAIN)
+		{
+			if (aasworld.reachability[i].facenum == modelnum) return i;
 		} //end if
 	} //end for
 	return 0;

@@ -227,6 +227,9 @@ void BotInterbreedGoalFuzzyLogic(int parent1, int parent2, int child)
 	p2 = BotGoalStateFromHandle(parent2);
 	c = BotGoalStateFromHandle(child);
 
+	if (!p1 || !p2 || !c)
+		return;
+
 	InterbreedWeightConfigs(p1->itemweightconfig, p2->itemweightconfig,
 									c->itemweightconfig);
 } //end of the function BotInterbreedingGoalFuzzyLogic
@@ -255,7 +258,7 @@ void BotMutateGoalFuzzyLogic(int goalstate, float range)
 	bot_goalstate_t *gs;
 
 	gs = BotGoalStateFromHandle(goalstate);
-
+	if (!gs) return;
 	EvolveWeightConfig(gs->itemweightconfig);
 } //end of the function BotMutateGoalFuzzyLogic
 //===========================================================================
@@ -310,7 +313,7 @@ itemconfig_t *LoadItemConfig(char *filename)
 			if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 			{
 				FreeMemory(ic);
-				FreeMemory(source);
+				FreeSource(source);
 				return NULL;
 			} //end if
 			StripDoubleQuotes(token.string);
@@ -676,26 +679,6 @@ void BotInitLevelItems(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void BotMarkLevelItemsPresent(void)
-{
-	levelitem_t *li;
-	//mark all statically-loaded BSP items as "always present" so that
-	//BotChooseLTGItem won't skip them (it skips items with entitynum==0).
-	//
-	//IMPORTANT: we use -1, NOT ENTITYNUM_NONE (1023).  The sentinel must be
-	//  (a) non-zero so it passes the "if (!li->entitynum) continue" filter
-	//      in BotChooseLTGItem (line 1360), and
-	//  (b) <= 0 so BotItemGoalInVisButNotVisible (line 1672) returns false
-	//      immediately instead of looking up entity 1023 (which doesn't
-	//      exist and always appears "stale", causing every goal to be
-	//      abandoned the moment the bot can see its position).
-	for (li = levelitems; li; li = li->next)
-	{
-		if (!li->entitynum)
-			li->entitynum = -1;
-	} //end for
-} //end of the function BotMarkLevelItemsPresent
-//===========================================================================
 // BotLinkItemModelIndicesFromTable
 //
 // Populate itemconfig modelindex fields from the game DLL's modelindexes[]
@@ -965,6 +948,7 @@ int BotGetLevelItemGoal(int index, char *name, bot_goal_t *goal)
 			goal->number = li->number;
 			goal->flags = GFL_ITEM;
 			if (li->timeout) goal->flags |= GFL_DROPPED;
+			goal->iteminfo = li->iteminfo;
 			//botimport.Print(PRT_MESSAGE, "found li %s\n", itemconfig->iteminfo[li->iteminfo].name);
 			return li->number;
 		} //end if
@@ -991,6 +975,9 @@ int BotGetMapLocationGoal(char *name, bot_goal_t *goal)
 			goal->entitynum = 0;
 			VectorCopy(mins, goal->mins);
 			VectorCopy(maxs, goal->maxs);
+			goal->number = 0;
+			goal->flags = 0;
+			goal->iteminfo = 0;
 			return true;
 		} //end if
 	} //end for
@@ -1019,6 +1006,9 @@ int BotGetNextCampSpotGoal(int num, bot_goal_t *goal)
 			goal->entitynum = 0;
 			VectorCopy(mins, goal->mins);
 			VectorCopy(maxs, goal->maxs);
+			goal->number = 0;
+			goal->flags = 0;
+			goal->iteminfo = 0;
 			return num+1;
 		} //end if
 	} //end for

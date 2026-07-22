@@ -2,7 +2,7 @@
 // Per-bot files #define FS_*/W_*/GWW_* values then #include this file.
 // Mirrors Q3's fw_items.c but uses Q2 items and inventory indices.
 //
-// Weight names must match the "name" field in botfiles/items.c iteminfo entries.
+// Weight names are the classnames of the iteminfo entries in botfiles/items.c.
 // NOTE: inv.h is NOT included here — the per-bot _i.c file includes it
 // before #include-ing this template (matches Q3's original structure).
 
@@ -87,6 +87,108 @@
 #endif
 #ifndef W_ENVIROSUIT
 #define W_ENVIROSUIT        20
+#endif
+
+// Mission pack weapons. A bot file that does not weigh them gets the weights
+// of the base weapon playing the same part, as Gladiator weighed the
+// Ionripper like the HyperBlaster and the Phalanx like the Rocket Launcher:
+// the ETF Rifle and the Plasma Beam like the HyperBlaster too, the Prox
+// Launcher like the Grenade Launcher, the Disruptor like the Railgun. The
+// Trap and the Tesla get half the Grenade Launcher's, the Chainfist half the
+// Shotgun's. The $evalint defaults must only ever be used as a plain
+// "return W_X;" -- an $evalint inside another does not parse.
+#ifndef W_IONRIPPER
+#define W_IONRIPPER         W_HYPERBLASTER
+#endif
+#ifndef W_PHALANX
+#define W_PHALANX           W_ROCKETLAUNCHER
+#endif
+#ifndef W_TRAP
+#define W_TRAP              $evalint(W_GRENADELAUNCHER / 2)
+#endif
+#ifndef W_ETFRIFLE
+#define W_ETFRIFLE          W_HYPERBLASTER
+#endif
+#ifndef W_PROXLAUNCHER
+#define W_PROXLAUNCHER      W_GRENADELAUNCHER
+#endif
+#ifndef W_PLASMABEAM
+#define W_PLASMABEAM        W_HYPERBLASTER
+#endif
+#ifndef W_CHAINFIST
+#define W_CHAINFIST         $evalint(W_SHOTGUN / 2)
+#endif
+#ifndef W_DISRUPTOR
+#define W_DISRUPTOR         W_RAILGUN
+#endif
+#ifndef W_TESLA
+#define W_TESLA             $evalint(W_GRENADELAUNCHER / 2)
+#endif
+
+#ifndef GWW_IONRIPPER
+#define GWW_IONRIPPER       GWW_HYPERBLASTER
+#endif
+#ifndef GWW_PHALANX
+#define GWW_PHALANX         GWW_ROCKETLAUNCHER
+#endif
+#ifndef GWW_TRAP
+#define GWW_TRAP            $evalint(GWW_GRENADELAUNCHER / 2)
+#endif
+#ifndef GWW_ETFRIFLE
+#define GWW_ETFRIFLE        GWW_HYPERBLASTER
+#endif
+#ifndef GWW_PROXLAUNCHER
+#define GWW_PROXLAUNCHER    GWW_GRENADELAUNCHER
+#endif
+#ifndef GWW_PLASMABEAM
+#define GWW_PLASMABEAM      GWW_HYPERBLASTER
+#endif
+#ifndef GWW_DISRUPTOR
+#define GWW_DISRUPTOR       GWW_RAILGUN
+#endif
+#ifndef GWW_TESLA
+#define GWW_TESLA           $evalint(GWW_GRENADELAUNCHER / 2)
+#endif
+
+// Other item weights
+#ifndef W_POWERSCREEN
+#define W_POWERSCREEN       $evalint(50 * FS_ARMOR)
+#endif
+#ifndef W_POWERSHIELD
+#define W_POWERSHIELD       $evalint(70 * FS_ARMOR)
+#endif
+#ifndef W_BANDOLIER
+#define W_BANDOLIER         60
+#endif
+#ifndef W_AMMOPACK
+#define W_AMMOPACK          80
+#endif
+#ifndef W_DUALFIRE
+#define W_DUALFIRE          $evalint(W_QUAD * 7 / 10)
+#endif
+#ifndef W_IRGOGGLES
+#define W_IRGOGGLES         W_SILENCER
+#endif
+#ifndef W_DOUBLEDAMAGE
+#define W_DOUBLEDAMAGE      $evalint(W_QUAD / 2)
+#endif
+#ifndef W_COMPASS
+#define W_COMPASS           10
+#endif
+#ifndef W_SPHERE
+#define W_SPHERE            $evalint(W_QUAD / 2)
+#endif
+#ifndef W_DOPPLEGANGER
+#define W_DOPPLEGANGER      $evalint(W_QUAD / 2)
+#endif
+#ifndef W_AMBOMB
+#define W_AMBOMB            $evalint(W_QUAD / 4)
+#endif
+#ifndef W_TAGTOKEN
+#define W_TAGTOKEN          W_QUAD
+#endif
+#ifndef W_TECH
+#define W_TECH              $evalint(W_QUAD / 2)
 #endif
 
 // ===== WEAPONS =====
@@ -258,6 +360,134 @@ weight "weapon_bfg"
     }
 }
 
+// The Reckoning
+
+// Ionripper
+weight "weapon_boomer"
+{
+    switch(INVENTORY_IONRIPPER)
+    {
+        case 1: return W_IONRIPPER;
+        default:
+        {
+            switch(INVENTORY_CELLS)
+            {
+                case 50: return GWW_IONRIPPER;
+                case 80: return $evalint(GWW_IONRIPPER / 2);
+                case 100: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
+// Phalanx
+weight "weapon_phalanx"
+{
+    switch(INVENTORY_PHALANX)
+    {
+        case 1: return W_PHALANX;
+        default:
+        {
+            switch(INVENTORY_MAGSLUGS)
+            {
+                case 10: return GWW_PHALANX;
+                case 20: return $evalint(GWW_PHALANX / 2);
+                case 25: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
+// Ground Zero
+
+// ETF Rifle
+weight "weapon_etf_rifle"
+{
+    switch(INVENTORY_ETFRIFLE)
+    {
+        case 1: return W_ETFRIFLE;
+        default:
+        {
+            switch(INVENTORY_FLECHETTES)
+            {
+                case 50: return GWW_ETFRIFLE;
+                case 80: return $evalint(GWW_ETFRIFLE / 2);
+                case 100: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
+// Prox Launcher
+weight "weapon_proxlauncher"
+{
+    switch(INVENTORY_PROXLAUNCHER)
+    {
+        case 1: return W_PROXLAUNCHER;
+        default:
+        {
+            switch(INVENTORY_PROX)
+            {
+                case 10: return GWW_PROXLAUNCHER;
+                case 20: return $evalint(GWW_PROXLAUNCHER / 2);
+                case 25: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
+// Plasma Beam
+weight "weapon_plasmabeam"
+{
+    switch(INVENTORY_PLASMABEAM)
+    {
+        case 1: return W_PLASMABEAM;
+        default:
+        {
+            switch(INVENTORY_CELLS)
+            {
+                case 50: return GWW_PLASMABEAM;
+                case 80: return $evalint(GWW_PLASMABEAM / 2);
+                case 100: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
+// Chainfist: no ammo, so worthless once owned
+weight "weapon_chainfist"
+{
+    switch(INVENTORY_CHAINFIST)
+    {
+        case 1: return W_CHAINFIST;
+        default: return 0;
+    }
+}
+
+// Disruptor
+weight "weapon_disintegrator"
+{
+    switch(INVENTORY_DISRUPTOR)
+    {
+        case 1: return W_DISRUPTOR;
+        default:
+        {
+            switch(INVENTORY_ROUNDS)
+            {
+                case 15: return GWW_DISRUPTOR;
+                case 30: return $evalint(GWW_DISRUPTOR / 2);
+                case 40: return 0;
+                default: return 0;
+            }
+        }
+    }
+}
+
 // ===== AMMO =====
 // Weights scale with how much the bot needs the ammo (low ammo = high weight).
 // Matches Q3's graduated approach instead of flat weights.
@@ -338,6 +568,87 @@ weight "ammo_grenades"
     }
 }
 
+// The Reckoning
+
+// Mag Slug: Phalanx ammo, 10 a pickup, 50 at most
+weight "ammo_magslug"
+{
+    switch(INVENTORY_MAGSLUGS)
+    {
+        case 5: return 60;
+        case 10: return 45;
+        case 15: return 30;
+        case 20: return 15;
+        case 25: return 0;
+        default: return 0;
+    }
+}
+
+// Trap: ammo and weapon at once, 5 at most
+weight "ammo_trap"
+{
+    switch(INVENTORY_TRAP)
+    {
+        case 1: return W_TRAP;
+        case 3: return GWW_TRAP;
+        default: return 0;
+    }
+}
+
+// Ground Zero
+
+// Flechettes: ETF Rifle ammo, 50 a pickup, 200 at most
+weight "ammo_flechettes"
+{
+    switch(INVENTORY_FLECHETTES)
+    {
+        case 30: return 50;
+        case 50: return 35;
+        case 80: return 15;
+        case 100: return 0;
+        default: return 0;
+    }
+}
+
+// Prox: Prox Launcher ammo, 5 a pickup, 50 at most
+weight "ammo_prox"
+{
+    switch(INVENTORY_PROX)
+    {
+        case 5: return 50;
+        case 10: return 35;
+        case 15: return 20;
+        case 20: return 10;
+        case 25: return 0;
+        default: return 0;
+    }
+}
+
+// Tesla: ammo and weapon at once, 5 a pickup, 50 at most
+weight "ammo_tesla"
+{
+    switch(INVENTORY_TESLA)
+    {
+        case 1: return W_TESLA;
+        case 15: return GWW_TESLA;
+        default: return 0;
+    }
+}
+
+// Rounds: Disruptor ammo, 15 a pickup, 100 at most
+weight "ammo_disruptor"
+{
+    switch(INVENTORY_ROUNDS)
+    {
+        case 10: return 60;
+        case 20: return 45;
+        case 30: return 30;
+        case 40: return 15;
+        case 50: return 0;
+        default: return 0;
+    }
+}
+
 // ===== HEALTH =====
 
 weight "item_health"
@@ -358,6 +669,18 @@ weight "item_health_large"
 weight "item_health_mega"
 {
     return $evalint(100 * FS_HEALTH);
+}
+
+// Adrenaline: heals to full health
+weight "item_adrenaline"
+{
+    return $evalint(40 * FS_HEALTH);
+}
+
+// Ancient Head: +2 maximum health
+weight "item_ancient_head"
+{
+    return $evalint(15 * FS_HEALTH);
 }
 
 // ===== ARMOR =====
@@ -382,31 +705,245 @@ weight "item_armor_shard"
     return $evalint(10 * FS_ARMOR);
 }
 
+// Power armor: switched on at pickup in deathmatch, runs on cells. A second
+// one does nothing.
+weight "item_power_screen"
+{
+    switch(INVENTORY_POWERSCREEN)
+    {
+        case 1: return W_POWERSCREEN;
+        default: return 0;
+    }
+}
+
+weight "item_power_shield"
+{
+    switch(INVENTORY_POWERSHIELD)
+    {
+        case 1: return W_POWERSHIELD;
+        default: return 0;
+    }
+}
+
+// ===== AMMO CAPACITY =====
+// Both raise the ammo limits and bring ammo; the game counts them in the
+// inventory, so a second one is worth its ammo only.
+
+weight "item_bandolier"
+{
+    switch(INVENTORY_BANDOLIER)
+    {
+        case 1: return W_BANDOLIER;
+        default: return 20;
+    }
+}
+
+weight "item_pack"
+{
+    switch(INVENTORY_AMMOPACK)
+    {
+        case 1: return W_AMMOPACK;
+        default: return 25;
+    }
+}
+
 // ===== POWERUPS =====
+// Q2 keeps these in the inventory until they are used (unless dmflags has
+// instant items) and refuses a second one of a kind at skill 2 and above
+// (Pickup_Powerup), so an item the bot already holds weighs nothing.
 
 weight "item_quad"
 {
-    return W_QUAD;
+    switch(INVENTORY_QUAD)
+    {
+        case 1: return W_QUAD;
+        default: return 0;
+    }
 }
 
 weight "item_invulnerability"
 {
-    return W_INVULNERABILITY;
+    switch(INVENTORY_INVULNERABILITY)
+    {
+        case 1: return W_INVULNERABILITY;
+        default: return 0;
+    }
 }
 
 weight "item_silencer"
 {
-    return W_SILENCER;
+    switch(INVENTORY_SILENCER)
+    {
+        case 1: return W_SILENCER;
+        default: return 0;
+    }
 }
 
 weight "item_breather"
 {
-    return W_REBREATHER;
+    switch(INVENTORY_REBREATHER)
+    {
+        case 1: return W_REBREATHER;
+        default: return 0;
+    }
 }
 
 weight "item_enviro"
 {
-    return W_ENVIROSUIT;
+    switch(INVENTORY_ENVIRONMENTSUIT)
+    {
+        case 1: return W_ENVIROSUIT;
+        default: return 0;
+    }
+}
+
+// The Reckoning
+
+// DualFire Damage: doubles the rate of fire
+weight "item_quadfire"
+{
+    switch(INVENTORY_DUALFIREDAMAGE)
+    {
+        case 1: return W_DUALFIRE;
+        default: return 0;
+    }
+}
+
+// Ground Zero
+
+weight "item_ir_goggles"
+{
+    switch(INVENTORY_IRGOGGLES)
+    {
+        case 1: return W_IRGOGGLES;
+        default: return 0;
+    }
+}
+
+weight "item_double"
+{
+    switch(INVENTORY_DOUBLEDAMAGE)
+    {
+        case 1: return W_DOUBLEDAMAGE;
+        default: return 0;
+    }
+}
+
+// points the way in coop, no use in deathmatch
+weight "item_compass"
+{
+    switch(INVENTORY_COMPASS)
+    {
+        case 1: return W_COMPASS;
+        default: return 0;
+    }
+}
+
+weight "item_sphere_vengeance"
+{
+    switch(INVENTORY_VENGEANCESPHERE)
+    {
+        case 1: return W_SPHERE;
+        default: return 0;
+    }
+}
+
+weight "item_sphere_hunter"
+{
+    switch(INVENTORY_HUNTERSPHERE)
+    {
+        case 1: return W_SPHERE;
+        default: return 0;
+    }
+}
+
+weight "item_sphere_defender"
+{
+    switch(INVENTORY_DEFENDERSPHERE)
+    {
+        case 1: return W_SPHERE;
+        default: return 0;
+    }
+}
+
+weight "item_doppleganger"
+{
+    switch(INVENTORY_DOPPLEGANGER)
+    {
+        case 1: return W_DOPPLEGANGER;
+        default: return 0;
+    }
+}
+
+// A-M Bomb: one at most
+weight "ammo_nuke"
+{
+    switch(INVENTORY_AMBOMB)
+    {
+        case 1: return W_AMBOMB;
+        default: return 0;
+    }
+}
+
+// Tag deathmatch: its carrier scores double
+weight "dm_tag_token"
+{
+    switch(INVENTORY_TAGTOKEN)
+    {
+        case 1: return W_TAGTOKEN;
+        default: return 0;
+    }
+}
+
+// ===== CTF TECHS =====
+// A player carries one tech at most (CTFPickup_Tech).
+
+#define TECH_WEIGHT(w) \
+    switch(INVENTORY_TECH1) \
+    { \
+        case 1: \
+        { \
+            switch(INVENTORY_TECH2) \
+            { \
+                case 1: \
+                { \
+                    switch(INVENTORY_TECH3) \
+                    { \
+                        case 1: \
+                        { \
+                            switch(INVENTORY_TECH4) \
+                            { \
+                                case 1: return w; \
+                                default: return 0; \
+                            } \
+                        } \
+                        default: return 0; \
+                    } \
+                } \
+                default: return 0; \
+            } \
+        } \
+        default: return 0; \
+    }
+
+weight "item_tech1"
+{
+    TECH_WEIGHT(W_TECH)
+}
+
+weight "item_tech2"
+{
+    TECH_WEIGHT(W_TECH)
+}
+
+weight "item_tech3"
+{
+    TECH_WEIGHT(W_TECH)
+}
+
+weight "item_tech4"
+{
+    TECH_WEIGHT(W_TECH)
 }
 
 // ===== KEYS (navigation triggers, low weight) =====

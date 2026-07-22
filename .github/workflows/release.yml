@@ -71,6 +71,10 @@ jobs:
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
+          # the bot personalities over the shipped default bot; the game
+          # reads the bot list from the mod directory itself
+          cp -r botfiles/. q3bot/botfiles/
+          mv q3bot/botfiles/bots.cfg q3bot/
           tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload Linux artifact
@@ -126,6 +130,18 @@ jobs:
             Copy-Item $_.FullName -Destination q3bot -Recurse -Force
           }
 
+          # the bot personalities over the shipped default bot, file by file
+          # (Copy-Item -Recurse nests a folder copied onto one of the same
+          # name); the game reads the bot list from the mod directory itself
+          $src = (Resolve-Path botfiles).Path
+          Get-ChildItem botfiles -Recurse -File | ForEach-Object {
+            $rel = $_.FullName.Substring($src.Length + 1)
+            if ($rel -eq 'bots.cfg') { $dst = 'q3bot\bots.cfg' }
+            else { $dst = Join-Path 'q3bot\botfiles' $rel }
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+            Copy-Item $_.FullName -Destination $dst -Force
+          }
+
           Compress-Archive -Path q3bot -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
 
       - name: Upload Windows artifact
@@ -168,6 +184,10 @@ jobs:
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
+          # the bot personalities over the shipped default bot; the game
+          # reads the bot list from the mod directory itself
+          cp -r botfiles/. q3bot/botfiles/
+          mv q3bot/botfiles/bots.cfg q3bot/
           tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload macOS artifact

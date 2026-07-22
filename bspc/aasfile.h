@@ -54,6 +54,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define TRAVEL_STRAFEJUMP			17		//strafe jump
 #define TRAVEL_JUMPPAD				18		//jump pad
 #define TRAVEL_FUNCBOB				19		//func bob
+#define TRAVEL_FUNCTRAIN			20		//Q2: ride a func_train
 
 //face flags
 #define FACE_SOLID					1		//just solid at the other side

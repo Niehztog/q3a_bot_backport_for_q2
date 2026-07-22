@@ -470,6 +470,7 @@ void AAS_ShowTotals(void)
 	AAS_ShowNumReachabilities(TRAVEL_STRAFEJUMP, "strafe jump");
 	AAS_ShowNumReachabilities(TRAVEL_JUMPPAD, "jump pad");
 	AAS_ShowNumReachabilities(TRAVEL_FUNCBOB, "func bob");
+	AAS_ShowNumReachabilities(TRAVEL_FUNCTRAIN, "func train");
 } //end of the function AAS_ShowTotals
 //===========================================================================
 // aas data is useless after writing to file because it is byte swapped
