@@ -4,7 +4,6 @@
 #ifdef BOT
 #include "bl_spawn.h"
 #include "bl_main.h"
-#include "bl_chat.h"
 #endif //BOT
 #ifdef OBSERVER
 #include "p_observer.h"
@@ -938,9 +937,64 @@ void LookAtKiller (edict_t *self, edict_t *inflictor, edict_t *attacker)
 	}
 	if (self->client->killer_yaw < 0)
 		self->client->killer_yaw += 360;
-	
+
 
 }
+
+#ifdef BOT
+/*
+==================
+BotNotifyDeathKill
+
+Notifies botlib.so of a death so the real ported Q3 AI (game_q3/ai_main.c/
+ai_dmnet.c/ai_dmq3.c/ai_chat.c, all compiled into botlib.so) can react --
+bs->botdeathtype/lastkilledby/botsuicide/num_deaths (victim side) and
+bs->enemydeathtype/lastkilledplayer/num_kills (killer side) are read by
+BotIsDead()-driven state transitions and chat triggers a few frames/one
+second later (see the report), so nothing else needs to happen here
+beyond the two notify calls.
+
+Mirrors game_q2/bl_chat.c's now-deleted BotChat_NotifyDeath()'s victim/
+killer resolution (that function's own chat-triggering side is gone --
+superseded by the real ported code's own bs-> field reads -- but the
+notify-call branching itself is preserved here, plus one addition):
+  - victim is a bot: notify it of its own death.
+  - victim is human: still notify botlib.so (via the first loaded
+    library) so bots tracking this player as their enemy can react --
+    this also covers human suicides, which never reach the branch below.
+  - killer is a bot AND killer != victim (not a self-kill/suicide,
+    already covered by the victim-side notify above): notify it of the
+    kill.
+==================
+*/
+static void BotNotifyDeathKill(edict_t *self, edict_t *attacker, int mod)
+{
+	int cl;
+	int victim_cl = DF_ENTCLIENT(self);
+	int killer_cl = (attacker && attacker->client) ? DF_ENTCLIENT(attacker) : -1;
+
+	if (self->flags & FL_BOT) {
+		cl = victim_cl;
+		if (cl >= 0 && cl < game.maxclients &&
+		    botglobals.botstates[cl].active && botglobals.botstates[cl].library)
+			botglobals.botstates[cl].library->funcs.BotNotifyDeath(victim_cl, killer_cl, mod);
+	} else if (victim_cl >= 0 && victim_cl < game.maxclients && botglobals.firstbotlib) {
+		/* Victim is human: botlib.so still needs to hear about this death
+		 * so any bot tracking victim_cl as bs->enemy can react (real Q3
+		 * notifies every observing bot, not just the credited killer).
+		 * There's no per-client library pointer for a human slot, so use
+		 * the first loaded bot library directly. */
+		botglobals.firstbotlib->funcs.BotNotifyDeath(victim_cl, killer_cl, mod);
+	}
+
+	if (attacker && attacker != self && (attacker->flags & FL_BOT)) {
+		cl = killer_cl;
+		if (cl >= 0 && cl < game.maxclients &&
+		    botglobals.botstates[cl].active && botglobals.botstates[cl].library)
+			botglobals.botstates[cl].library->funcs.BotNotifyKill(killer_cl, victim_cl, mod);
+	}
+}
+#endif //BOT
 
 /*
 ==================
@@ -979,7 +1033,7 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 		self->client->ps.pmove.pm_type = PM_DEAD;
 		ClientObituary (self, inflictor, attacker);
 #ifdef BOT
-		BotChat_NotifyDeath(self, attacker, meansOfDeath);
+		BotNotifyDeathKill(self, attacker, meansOfDeath);
 #endif
 #ifdef ZOID
 		if (ctf->value) CTFFragBonuses(self, inflictor, attacker);

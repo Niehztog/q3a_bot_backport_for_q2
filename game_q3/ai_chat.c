@@ -30,9 +30,29 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
-/* Q2 compatibility: pull in Q2 game headers + compat shim instead of Q3 */
-#include "../game_q2/g_local.h"
-#include "../game_q2/ai_chat_q2.h"
+/*
+ * Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h), which supersedes game_q2/ai_chat_q2.h.
+ *
+ * ai_chat.c now compiles into botlib.so alongside ai_main.c/ai_dmnet.c/
+ * ai_dmq3.c/ai_team.c (moved from game.so -- see the plan's "Forced
+ * consequence" section: ai_dmnet.c/ai_dmq3.c call BotChat_* functions as
+ * plain C calls, which only works if both sides link into the same
+ * binary). That means ai_chat.c must share the exact same, real
+ * bot_state_t layout the other 4 files use (ai_main.h), not the reduced,
+ * ai_chat.c-only bot_state_t game_q2/ai_chat_q2.h used to hand-roll --
+ * so, unlike the plan's literal "two existing #includes" description,
+ * ai_chat.c also picks up ai_main.h/ai_dmq3.h/ai_chat.h/chars.h/inv.h/
+ * syn.h here, exactly like the other 4 files already do.
+ */
+#include "../botlib/ai_q2_compat.h"
+#include "ai_main.h"
+#include "ai_dmq3.h"
+#include "ai_chat.h"
+#include "chars.h"
+#include "inv.h"
+#include "syn.h"
 
 #define TIME_BETWEENCHATTING	25
 
@@ -331,7 +351,12 @@ int BotVisibleEnemies(bot_state_t *bs) {
 		//
 		if (!entinfo.valid) continue;
 		//if the enemy isn't dead and the enemy isn't the bot self
-		if (EntityIsDead(&entinfo) || entinfo.number == bs->entitynum) continue;
+		/* Q2 port fix: entinfo.number is a real, translated Q2 entity
+		 * number; bs->entitynum is still a plain client number -- translate
+		 * it (see game_q3/ai_main.c's BotEntityInfo for the full rationale;
+		 * this check is otherwise redundant with `i == bs->client` above,
+		 * but keep it correct/consistent regardless). */
+		if (EntityIsDead(&entinfo) || entinfo.number == Q2_ClientNumToEntityNum(bs->entitynum)) continue;
 		//if the enemy is invisible and not shooting
 		if (EntityIsInvisible(&entinfo) && !EntityIsShooting(&entinfo)) {
 			continue;
@@ -741,6 +766,36 @@ int BotChat_EnemySuicide(bot_state_t *bs) {
 	return true;
 }
 
+/* g_entities[] (botlib/ai_q2_shim.c's g_entities_compat[]) is a
+ * permanently-zeroed Q3-gentity_t-shaped placeholder -- nothing in this
+ * port ever populates its `.client` pointer, so dereferencing
+ * g_entities[x].client directly (as all 8 call sites below used to) is a
+ * guaranteed NULL-pointer crash. Real lasthurt_client/mod now reach here
+ * instead via bot_state_t.q2_reallasthurt_client/_mod (ai_main.h),
+ * written every frame by botlib/be_interface_q2.c's Q2BotUpdateClient
+ * from Q2's own gclient_t fields (game_q2/g_combat.c), piggybacked
+ * through the frozen ABI's stats[28]/[29]. Only populated for clients
+ * that are themselves active bots (Q2BotUpdateClient only runs for
+ * bots) -- looking this up for a human client number falls back to
+ * botstates[entnum] being NULL and reads as "nobody hurt them", exactly
+ * like a real client who simply hasn't been hit. */
+extern bot_state_t *botstates[MAX_CLIENTS];
+
+static int Q2_LastHurtClient(int entnum) {
+	bot_state_t *obs;
+	if (entnum < 0 || entnum >= MAX_CLIENTS) return 0;
+	obs = botstates[entnum];
+	if (!obs) return 0;
+	return obs->q2_reallasthurt_client;
+}
+static int Q2_LastHurtMod(int entnum) {
+	bot_state_t *obs;
+	if (entnum < 0 || entnum >= MAX_CLIENTS) return 0;
+	obs = botstates[entnum];
+	if (!obs) return 0;
+	return obs->q2_reallasthurt_mod;
+}
+
 /*
 ==================
 BotChat_HitTalking
@@ -754,7 +809,7 @@ int BotChat_HitTalking(bot_state_t *bs) {
 	if (bot_nochat.integer) return false;
 	if (bs->lastchat_time > FloatTime() - TIME_BETWEENCHATTING) return false;
 	if (BotNumActivePlayers() <= 1) return false;
-	lasthurt_client = g_entities[bs->client].client->lasthurt_client;
+	lasthurt_client = Q2_LastHurtClient(bs->client);
 	if (!lasthurt_client) return false;
 	if (lasthurt_client == bs->client) return false;
 	//
@@ -771,8 +826,8 @@ int BotChat_HitTalking(bot_state_t *bs) {
 	}
 	if (!BotValidChatPosition(bs)) return false;
 	//
-	ClientName(g_entities[bs->client].client->lasthurt_client, name, sizeof(name));
-	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->client].client->lasthurt_client);
+	ClientName(Q2_LastHurtClient(bs->client), name, sizeof(name));
+	weap = BotWeaponNameForMeansOfDeath(Q2_LastHurtClient(bs->client));
 	//
 	BotAI_BotInitialChat(bs, "hit_talking", name, weap, NULL);
 	bs->lastchat_time = FloatTime();
@@ -791,7 +846,7 @@ int BotChat_HitNoDeath(bot_state_t *bs) {
 	int lasthurt_client;
 	aas_entityinfo_t entinfo;
 
-	lasthurt_client = g_entities[bs->client].client->lasthurt_client;
+	lasthurt_client = Q2_LastHurtClient(bs->client);
 	if (!lasthurt_client) return false;
 	if (lasthurt_client == bs->client) return false;
 	//
@@ -817,7 +872,7 @@ int BotChat_HitNoDeath(bot_state_t *bs) {
 	if (EntityIsShooting(&entinfo)) return false;
 	//
 	ClientName(lasthurt_client, name, sizeof(name));
-	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->client].client->lasthurt_mod);
+	weap = BotWeaponNameForMeansOfDeath(Q2_LastHurtMod(bs->client));
 	//
 	BotAI_BotInitialChat(bs, "hit_nodeath", name, weap, NULL);
 	bs->lastchat_time = FloatTime();
@@ -855,7 +910,7 @@ int BotChat_HitNoKill(bot_state_t *bs) {
 	if (EntityIsShooting(&entinfo)) return false;
 	//
 	ClientName(bs->enemy, name, sizeof(name));
-	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->enemy].client->lasthurt_mod);
+	weap = BotWeaponNameForMeansOfDeath(Q2_LastHurtMod(bs->enemy));
 	//
 	BotAI_BotInitialChat(bs, "hit_nokill", name, weap, NULL);
 	bs->lastchat_time = FloatTime();
@@ -1145,8 +1200,8 @@ void BotChatTest(bot_state_t *bs) {
 		BotAI_BotInitialChat(bs, "enemy_suicide", name, NULL);
 		trap_BotEnterChat(bs->cs, 0, CHAT_ALL);
 	}
-	ClientName(g_entities[bs->client].client->lasthurt_client, name, sizeof(name));
-	weap = BotWeaponNameForMeansOfDeath(g_entities[bs->client].client->lasthurt_client);
+	ClientName(Q2_LastHurtClient(bs->client), name, sizeof(name));
+	weap = BotWeaponNameForMeansOfDeath(Q2_LastHurtClient(bs->client));
 	num = trap_BotNumInitialChats(bs->cs, "hit_talking");
 	for (i = 0; i < num; i++)
 	{

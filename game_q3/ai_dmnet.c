@@ -30,16 +30,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
-#include "g_local.h"
-#include "botlib.h"
-#include "be_aas.h"
-#include "be_ea.h"
-#include "be_ai_char.h"
-#include "be_ai_chat.h"
-#include "be_ai_gen.h"
-#include "be_ai_goal.h"
-#include "be_ai_move.h"
-#include "be_ai_weap.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
 //
 #include "ai_main.h"
 #include "ai_dmq3.h"
@@ -53,8 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "syn.h"			//synonyms
 #include "match.h"			//string matching types and vars
 
-// for the voice chats
-#include "../../ui/menudef.h"
+/* Voice-chat VOICECHAT_* constants come from ai_q2_compat.h instead of
+ * MISSIONPACK's ui/menudef.h (outside this repo; Q2 has no voice chat). */
 
 //goal flag, see be_ai_goal.h for the other GFL_*
 #define GFL_AIR			128
@@ -232,7 +226,10 @@ int BotReachedGoal(bot_state_t *bs, bot_goal_t *goal) {
 			return true;
 		}
 		//if the goal isn't there
-		if (trap_BotItemGoalInVisButNotVisible(bs->entitynum, bs->eye, bs->viewangles, goal)) {
+		/* Q2 port fix: BotItemGoalInVisButNotVisible's "viewer" parameter
+		 * (be_ai_goal.c) is used directly as AAS_Trace's self-exclusion
+		 * passent, reaching botimport.Trace -- translate the client number. */
+		if (trap_BotItemGoalInVisButNotVisible(Q2_ClientNumToEntityNum(bs->entitynum), bs->eye, bs->viewangles, goal)) {
 			/*
 			float avoidtime;
 			int t;
@@ -372,7 +369,10 @@ int BotGetLongTermGoal(bot_state_t *bs, int tfl, int retreat, bot_goal_t *goal) 
 			areanum = BotPointAreaNum(entinfo.origin);
 			if (areanum && trap_AAS_AreaReachability(areanum)) {
 				//update team goal
-				bs->teamgoal.entitynum = bs->teammate;
+				/* Q2 port fix: this goal reaches trap_BotMoveToGoal/
+				 * trap_BotMovementViewTarget (botlib-internal, treats
+				 * entitynum as a real Q2 entity number) -- translate. */
+				bs->teamgoal.entitynum = Q2_ClientNumToEntityNum(bs->teammate);
 				bs->teamgoal.areanum = areanum;
 				VectorCopy(entinfo.origin, bs->teamgoal.origin);
 				VectorSet(bs->teamgoal.mins, -8, -8, -8);
@@ -499,7 +499,10 @@ int BotGetLongTermGoal(bot_state_t *bs, int tfl, int retreat, bot_goal_t *goal) 
 			areanum = BotPointAreaNum(entinfo.origin);
 			if (areanum && trap_AAS_AreaReachability(areanum)) {
 				//update team goal
-				bs->teamgoal.entitynum = bs->teammate;
+				/* Q2 port fix: this goal reaches trap_BotMoveToGoal/
+				 * trap_BotMovementViewTarget (botlib-internal, treats
+				 * entitynum as a real Q2 entity number) -- translate. */
+				bs->teamgoal.entitynum = Q2_ClientNumToEntityNum(bs->teammate);
 				bs->teamgoal.areanum = areanum;
 				VectorCopy(entinfo.origin, bs->teamgoal.origin);
 				VectorSet(bs->teamgoal.mins, -8, -8, -8);
@@ -601,7 +604,10 @@ int BotGetLongTermGoal(bot_state_t *bs, int tfl, int retreat, bot_goal_t *goal) 
 			bs->ltgtype = 0;
 		}
 		//
-		if (trap_BotItemGoalInVisButNotVisible(bs->entitynum, bs->eye, bs->viewangles, goal)) {
+		/* Q2 port fix: BotItemGoalInVisButNotVisible's "viewer" parameter
+		 * (be_ai_goal.c) is used directly as AAS_Trace's self-exclusion
+		 * passent, reaching botimport.Trace -- translate the client number. */
+		if (trap_BotItemGoalInVisButNotVisible(Q2_ClientNumToEntityNum(bs->entitynum), bs->eye, bs->viewangles, goal)) {
 			trap_BotGoalName(bs->teamgoal.number, buf, sizeof(buf));
 			BotAI_BotInitialChat(bs, "getitem_notthere", buf, NULL);
 			trap_BotEnterChat(bs->cs, bs->decisionmaker, CHAT_TELL);
@@ -1069,7 +1075,8 @@ int BotLongTermGoal(bot_state_t *bs, int tfl, int retreat, bot_goal_t *goal) {
 			areanum = BotPointAreaNum(entinfo.origin);
 			if (areanum && trap_AAS_AreaReachability(areanum)) {
 				//update team goal
-				bs->lead_teamgoal.entitynum = bs->lead_teammate;
+				/* Q2 port fix: see the identical bs->teamgoal note above. */
+				bs->lead_teamgoal.entitynum = Q2_ClientNumToEntityNum(bs->lead_teammate);
 				bs->lead_teamgoal.areanum = areanum;
 				VectorCopy(entinfo.origin, bs->lead_teamgoal.origin);
 				VectorSet(bs->lead_teamgoal.mins, -8, -8, -8);
@@ -2201,7 +2208,10 @@ int AINode_Battle_Chase(bot_state_t *bs)
 	//map specific code
 	BotMapScripts(bs);
 	//create the chase goal
-	goal.entitynum = bs->enemy;
+	/* Q2 port fix: this goal reaches trap_BotMoveToGoal/
+	 * trap_BotMovementViewTarget just below (botlib-internal, treats
+	 * entitynum as a real Q2 entity number) -- translate. */
+	goal.entitynum = Q2_ClientNumToEntityNum(bs->enemy);
 	goal.areanum = bs->lastenemyareanum;
 	VectorCopy(bs->lastenemyorigin, goal.origin);
 	VectorSet(goal.mins, -8, -8, -8);

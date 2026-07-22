@@ -65,6 +65,8 @@ Design overview
  * that are not explicitly declared in the included headers. */
 extern int      AAS_PointAreaNum(vec3_t point);
 extern float    AAS_Time(void);
+extern int      AAS_StartFrame(float time);
+extern int      AAS_Initialized(void);
 extern void     AAS_ShowArea(int areanum, int groundfacesonly);
 extern void     AAS_ShowReachableAreas(int areanum);
 extern void     AAS_ShowReachability(aas_reachability_t *reach);
@@ -82,6 +84,71 @@ extern int Export_BotLibVarSet(char *var_name, char *value);
 extern int Export_BotLibStartFrame(float time);
 extern int Export_BotLibLoadMap(const char *mapname);
 extern int Export_BotLibUpdateEntity(int ent, bot_entitystate_t *state);
+
+/* ====================================================================
+ * The real Q3 bot AI (game_q3/ai_main.c, ai_dmnet.c, ai_dmq3.c, ai_team.c,
+ * ai_chat.c -- compiled into this same botlib.so, see
+ * botlib/ai_q2_compat.h) now drives bot decision-making, replacing the
+ * hand-rolled AINode-alike state machine that used to live below in this
+ * file. No header declares BotAISetupClient/BotAIShutdownClient/BotAI/
+ * BotSetupDeathmatchAI/botstates[] (ai_main.h only declares
+ * BotResetState/NumBots/BotEntityInfo/BotTeamLeader) -- extern-declare
+ * them directly, the same pattern already used above for Export_BotLib*.
+ *
+ * bot_settings_t is genuinely undefined in every header this project
+ * carries (mirrors botlib/ai_q2_compat.h's own copy -- deliberately not
+ * #included wholesale here: that header's trap_ and gentity_t compat
+ * scaffolding is scoped to the 5 ported ai_*.c files, and several of its
+ * own macros, e.g. CTF_RUSHBASE_TIME, would collide with this file's
+ * now-deleted same-named ones). The two definitions only ever cross the
+ * ai_main.c<->be_interface_q2.c boundary as a passed struct pointer,
+ * exactly like q2_bot_settings_t/bot_settings_t already do throughout
+ * this file, so a matching parallel definition here is safe. */
+typedef struct bot_settings_s {
+    char  characterfile[MAX_QPATH];
+    float skill;
+    char  team[MAX_QPATH];
+} bot_settings_t;
+
+#include "../game_q3/ai_main.h"
+
+extern int  BotAISetupClient(int client, struct bot_settings_s *settings, qboolean restart);
+extern int  BotAIShutdownClient(int client, qboolean restart);
+extern int  BotAI(int client, float thinktime);
+extern void BotUpdateInput(bot_state_t *bs, float thinktime);
+extern void BotSetupDeathmatchAI(void);
+extern bot_state_t *botstates[MAX_CLIENTS];
+extern int maxclients;
+
+/* Real Q3 playerState_t.pm_type/pm_flags/persistant values -- NOT the
+ * same numbering as Q2's own pmtype_t/PMF_* (game_q2/q_shared.h) or this
+ * file's own q2_pmtype_t below. These let Q2BotUpdateClient translate
+ * into bs->cur_ps (the REAL playerState_t) with the exact bit/value
+ * meanings game_q3/ai_dmq3.c's BotSetupForMovement/BotIsDead/
+ * BotIsObserver/BotIntermission expect (confirmed against those
+ * functions directly). Real Q3 keeps these in game/bg_public.h, which
+ * this repo's game_q3/ snapshot never carried (mirrors
+ * botlib/ai_q2_compat.h's own near-identical, separately-defined block
+ * for the 5 ported files). */
+#define Q3PM_NORMAL             0
+#define Q3PM_SPECTATOR          2
+#define Q3PM_DEAD               3
+#define Q3PM_FREEZE             4
+#define Q3PMF_DUCKED            1
+#define Q3PMF_TIME_KNOCKBACK    64
+#define Q3PMF_TIME_WATERJUMP    256
+#define Q3PERS_SCORE            0
+
+/* Real Q3 team_t numbering (game/bg_public.h in real Q3; this project's
+ * own copy lives in botlib/ai_q2_compat.h, scoped to the 5 ported ai_*.c
+ * files and deliberately not included wholesale here -- see the
+ * bot_settings_t comment above). Needed so Q2BotUpdateClient below can
+ * write bs->q2_realctfteam (ai_main.h, Phase 2) using the exact same
+ * numbering game_q3/ai_dmq3.c's BotTeam()/TEAM_RED/TEAM_BLUE/TEAM_FREE
+ * checks already expect. */
+#define Q3TEAM_FREE   0
+#define Q3TEAM_RED    1
+#define Q3TEAM_BLUE   2
 
 /* ====================================================================
  * Q2 bot API types (from gladq2_src/botlib.h)
@@ -294,181 +361,36 @@ typedef struct q2_bot_export_s {
 #define Q2CHAR_WALKER             48
 
 /* ====================================================================
- * Per-client AI state
- *
- * AI state machine modelled after Q3's AINode system (ai_dmnet.c) and
- * the Gladiator bot's internal state machine.  Both systems use the same
- * states; Gladiator kept them inside botlib.dll, Q3 moved them to the
- * game DLL.  We bring them back into botlib.
- *
- *   SEEK_LTG → [enemy found + aggression >= 50] → BATTLE_FIGHT
- *            → [enemy found + aggression <  50] → BATTLE_RETREAT
- *
- *   BATTLE_FIGHT → [enemy lost]         → SEEK_LTG
- *                → [aggression drops]   → BATTLE_RETREAT
- *
- *   BATTLE_RETREAT → [enemy lost]       → SEEK_LTG
- *                  → [aggression rises] → BATTLE_FIGHT
+ * Per-client AI state now lives entirely in the real Q3 ai_main.c's own
+ * bot_state_t *botstates[MAX_CLIENTS] (see the extern declaration above)
+ * -- this file must not keep a second, parallel per-client array. The
+ * hand-rolled AINode-alike state machine that used to be described here
+ * (and the private q2_botclient_t struct + q2clients[] array backing it)
+ * is gone; see game_q3/ai_dmnet.c/ai_dmq3.c for the real state machine.
  * ==================================================================== */
 #define Q2_BOTLIB_MAX_CLIENTS 256
 
-/* CTF long-term goal types (mirrors Q3 ai_main.h) */
-#define Q2_LTG_NONE         0
-#define Q2_LTG_GETFLAG      4   /* go to enemy base, pick up their flag */
-#define Q2_LTG_RUSHBASE     5   /* carrying enemy flag, rush to own base */
-#define Q2_LTG_RETURNFLAG   6   /* own flag dropped, return it */
-#define Q2_LTG_DEFENDBASE   3   /* camp near own flag */
-
-/* CTF flag carrier effects (from Q2 q_shared.h) */
+/* CTF flag carrier effects (from Q2 q_shared.h) -- still used by
+ * Q2BotUpdateEntity below to translate Q2 effects bits into Q3 powerup
+ * bits for AAS entity tracking; unrelated to the deleted CTF goal-
+ * selection logic. */
 #define Q2_EF_FLAG1_CARRIER  0x00040000
 #define Q2_EF_FLAG2_CARRIER  0x00080000
-
-/* CTF timing constants (from Q3 ai_dmq3.c) */
-#define CTF_RUSHBASE_TIME    120
-#define CTF_GETFLAG_TIME     120
-#define CTF_RETURNFLAG_TIME  40
-#define CTF_DEFENDBASE_TIME  30
-#define CTF_ROAM_TIME        20
-
-typedef enum {
-    Q2AI_SEEK_LTG,        /* navigating to long-term goal (no combat) */
-    Q2AI_SEEK_NBG,        /* diverting to nearby goal (no combat) */
-    Q2AI_BATTLE_FIGHT,    /* dedicated combat; goals paused */
-    Q2AI_BATTLE_RETREAT,  /* navigating to goals while defending */
-    Q2AI_BATTLE_CHASE,    /* pursuing enemy's last known position */
-    Q2AI_BATTLE_NBG,      /* picking up nearby item during combat */
-} q2_aistate_t;
-
-typedef struct {
-    qboolean    inuse;
-    int         character;
-    int         chatstate;
-    int         goalstate;
-    int         movestate;
-    int         weaponstate;
-    /* Cached from last BotUpdateClient */
-    vec3_t      origin;
-    vec3_t      velocity;
-    vec3_t      viewangles;
-    vec3_t      viewoffset;
-    byte        pm_flags;
-    q2_pmtype_t pm_type;
-    int         inventory[Q2_MAX_ITEMS];
-    int         effects;        /* Q2 entity effects flags (EF_FLAG1, etc.) */
-    /* AI state machine */
-    q2_aistate_t aistate;
-    int         enemy;          /* entity number of current enemy (-1 = none) */
-    float       enemy_time;     /* AAS_Time() when enemy was last visible */
-    /* Goal tracking */
-    bot_goal_t  ltg;            /* cached LTG; used as context for NBG range check */
-    qboolean    hasgoal;        /* an LTG is on the goal stack */
-    qboolean    hasnbg;         /* an NBG is pushed on top of the LTG */
-    float       ltg_check_time; /* AAS_Time() when BotChooseLTGItem was last called */
-    float       goal_set_time;  /* AAS_Time() when the current LTG was set */
-    float       nbg_check_time; /* AAS_Time() when BotChooseNBGItem was last checked */
-    q2_bot_settings_t settings;
-    /* Weapon selection: weapon number last sent via "use" (0 = not set) */
-    int         best_weapon_num;
-    /* Enemy distance from last frame (written to inventory[200/201] before
-     * weapon selection so default_w.c can use range-aware weights).
-     * Mirrors Q3's BotUpdateBattleInventory / ENEMY_HORIZONTAL_DIST scheme. */
-    int         enemy_hdist;    /* horizontal distance to nearest visible enemy */
-    int         enemy_height;   /* vertical offset (enemy.z - bot.z) */
-    /* Player stats cached from BotUpdateClient (Q2 stats[] array) */
-    int         health;         /* stats[STAT_HEALTH=1] */
-    int         armor;          /* stats[STAT_ARMOR=5] (#8) */
-    int         lasthealth;     /* health from previous frame (damage detection) */
-    /* Personality traits — cached from character file in Q2BotSetupClient.
-     * Mirrors Q3's per-frame Characteristic_BFloat() calls but cached
-     * once at setup for efficiency (traits don't change during a game). */
-    float       attack_skill;       /* [0,1] strafe quality, distance management */
-    float       aim_skill;          /* [0,1] trajectory prediction quality */
-    float       aim_accuracy;       /* [0,1] per-weapon accuracy scatter */
-    float       reactiontime;       /* [0,5] delay before engaging (seconds) */
-    float       alertness;          /* [0,1] detection range scale */
-    float       jumper;             /* [0,1] jump probability in combat */
-    float       croucher;           /* [0,1] crouch probability in combat */
-    float       firethrottle;       /* [0,1] fire-pause pattern (0=always fire) */
-    float       camper;             /* [0,1] camping tendency */
-    float       easy_fragger;       /* [0,1] will shoot chatting players */
-    float       weaponjumping;      /* [0,1] rocket jump willingness */
-    /* Combat movement (mirrors Q3's BotAttackMove in ai_dmq3.c:2635) */
-    float       attackstrafe_time;  /* accumulated strafe duration */
-    float       attackjump_time;    /* next allowed jump time */
-    float       attackcrouch_time;  /* next allowed crouch time */
-    int         flags;              /* BFL_STRAFERIGHT (1), BFL_AVOIDRIGHT (2), BFL_ATTACKED (4) */
-#define BFL_STRAFERIGHT  1
-#define BFL_AVOIDRIGHT   2
-#define BFL_ATTACKED     4
-    /* Reaction time + fire throttle state (mirrors Q3's BotCheckAttack) */
-    float       enemysight_time;    /* AAS_Time() when enemy first spotted this engagement */
-    float       firethrottlewait_time;  /* next time bot will consider firing again */
-    float       firethrottleshoot_time; /* next time bot must re-evaluate fire/wait */
-    /* Enemy velocity tracking for aim prediction */
-    vec3_t      enemyorigin;        /* enemy origin cached every 0.5s for prediction */
-    vec3_t      enemyvelocity;      /* enemy velocity cached every 0.5s */
-    float       enemyposition_time; /* AAS_Time() when enemyorigin/velocity was last updated */
-    /* Stuck detection */
-    vec3_t      lastorigin;         /* origin from previous frame */
-    float       notblocked_time;    /* last time NOT blocked */
-    /* Hazard/environment */
-    float       lastair_time;       /* last time bot was breathing air */
-    /* Powerup tracking (compare with prev frame to detect pickup) */
-    int         prev_quad;          /* inventory[23] from previous frame */
-    int         prev_invuln;        /* inventory[24] from previous frame */
-    /* Enemy chase (mirrors Q3's AINode_Battle_Chase):
-     * When LOS is lost, bot navigates toward the enemy's last known
-     * position for up to 10 seconds before giving up. */
-    vec3_t      lastenemyorigin;    /* world pos where enemy was last seen */
-    int         lastenemyareanum;   /* AAS area of that position */
-    float       chase_time;         /* AAS_Time() when chase started (0 = not chasing) */
-    /* Camping (mirrors Q3's BotWantsToCamp / BotGoCamp) */
-    float       camp_time;          /* AAS_Time() when last camp ended (cooldown) */
-    /* NBG during combat: time limit for nearby goal pickup */
-    float       nbg_combat_time;    /* AAS_Time() deadline for battle NBG */
-    /* Retreat nearby item check throttle */
-    float       retreat_check_time; /* next time to check for nearby items */
-    /* Spawn protection: recently teleported players */
-    float       teleport_time;      /* AAS_Time() when bot last teleported */
-    /* Random walk fallback when navigation fails persistently. */
-    vec3_t      roam_dir;           /* current random walk direction */
-    float       roam_dir_time;      /* AAS_Time() when roam_dir was last set */
-    float       move_fail_time;     /* AAS_Time() when movedir first became zero */
-    /* Area-loop detection: when the bot cycles through the same small set
-     * of areas repeatedly, the AAS has a routing dead-end (missing
-     * reachabilities at a passageway).  Detect and break out by roaming. */
-    int         area_history[8];    /* ring buffer of recent area numbers */
-    int         area_history_idx;   /* next write index */
-    float       area_loop_time;     /* AAS_Time() when loop was first detected */
-    /* Chat state (mirrors Q3 bot_state_t fields for ai_chat.c) */
-    float       lastchat_time;      /* AAS_Time() when last chat was sent */
-    int         chatto;             /* CHAT_ALL(0), CHAT_TEAM(1) */
-    int         botdeathtype;       /* MOD that killed this bot */
-    qboolean    botsuicide;         /* true if bot killed itself */
-    int         lastkilledby;       /* client number of last killer (-1 = world) */
-    int         lastkilledplayer;   /* client number of last bot kill victim */
-    int         enemydeathtype;     /* MOD used by this bot to kill enemy */
-    qboolean    entergamechat;      /* true if bot hasn't sent enter_game chat yet */
-    /* CTF state */
-    int         ctf_ltgtype;        /* Q2_LTG_* — current CTF long-term goal */
-    float       ctf_goal_time;      /* AAS_Time() deadline for current CTF goal */
-    float       ctf_decide_time;    /* throttle for CTF decision making */
-    float       ctf_roam_time;      /* AAS_Time() when CTF roam period ends */
-    bot_goal_t  ctf_goal;           /* current CTF navigation goal (flag location) */
-    qboolean    ctf_has_flag;       /* true if carrying enemy flag */
-} q2_botclient_t;
 
 /* ====================================================================
  * Module globals
  * ==================================================================== */
 static q2_bot_import_t q2import;         /* stored Q2 import callbacks  */
 static q2_bot_export_t q2_export;        /* returned Q2 export struct   */
-static q2_botclient_t  q2clients[Q2_BOTLIB_MAX_CLIENTS];
 
-/* CTF flag goal locations — populated from AAS item data when map loads */
-static bot_goal_t ctf_redflag;           /* team 1 (red) flag spawn */
-static bot_goal_t ctf_blueflag;          /* team 2 (blue) flag spawn */
-static qboolean   ctf_flags_initialized; /* true once flag goals are found */
+/* Last weapon number (Q3 WP_*-alike weaponinfo_t.number, not a Q2
+ * inventory index) commanded to Q2 via a "use <name>" client command per
+ * client, purely so Q2BotAI doesn't reissue an identical "use" command
+ * every server frame. Adapter-side plumbing only (like q2_entvelocity[]
+ * below), not AI state -- Q2's own Use_Weapon() already no-ops on an
+ * unchanged weapon regardless, so this is an efficiency guard, not a
+ * correctness requirement. */
+static int q2_lastweaponcmd[MAX_CLIENTS];
 
 /* Per-entity velocity cache: computed from origin deltas between frames.
  * Neither Q2's bot_updateentity_t nor Q3's bot_entitystate_t carry velocity,
@@ -1028,6 +950,31 @@ static int Q2BotDefine(char *string)
     return PC_AddGlobalDefine(string);
 }
 
+/* Shared by Q2BotStartFrame (every frame) and Q2BotLoadMap (once, right
+ * before BotSetupDeathmatchAI needs a correct answer -- see there). The
+ * game DLL sets "ctf"/"teamplay"/"arena" LibVars at init time; there is
+ * no real Q2 concept named "g_gametype" so this derives Q3's numbering
+ * from them. */
+static void Q2UpdateGametypeLibVar(void)
+{
+    float ctf_val = LibVarGetValue("ctf");
+    float tp_val  = LibVarGetValue("teamplay");
+    float ar_val  = LibVarGetValue("arena");
+    if (ctf_val)
+        LibVarSet("g_gametype", "4"); /* GT_CTF */
+    else if (tp_val || ar_val)
+        LibVarSet("g_gametype", "3"); /* GT_TEAM */
+    else
+        LibVarSet("g_gametype", "0"); /* GT_FFA */
+}
+
+/* Cached for trap_GetServerinfo (ai_q2_shim.c), whose only consumer is
+ * BotMapTitle() (ai_chat.c) wanting "mapname". Mirrors game_q2/bl_chat.c's
+ * now-deleted trap_GetServerinfo, which read Q2's real level.mapname
+ * directly from game.so; botlib.so has no such access, but Q2BotLoadMap
+ * below already receives the real mapname as an argument every map load. */
+char q2_cached_mapname[64] = "";
+
 static int Q2BotLoadMap(char *mapname, int nummodelindexes, char *modelindex[],
                          int soundindexes, char *soundindex[],
                          int imageindexes, char *imageindex[])
@@ -1045,10 +992,10 @@ static int Q2BotLoadMap(char *mapname, int nummodelindexes, char *modelindex[],
      * grown since the initial call). */
 
     if (mapname) {
+        Q_strncpyz(q2_cached_mapname, mapname, sizeof(q2_cached_mapname));
+
         /* Clear per-entity velocity cache from previous map */
         Com_Memset(q2_entvelocity, 0, sizeof(q2_entvelocity));
-        /* Reset CTF flag goals for new map */
-        ctf_flags_initialized = false;
 
         /* Read BSP entity lump from disk before calling Q3's load */
         Q2_ReadBSPEntityData(mapname);
@@ -1058,6 +1005,83 @@ static int Q2BotLoadMap(char *mapname, int nummodelindexes, char *modelindex[],
 
         /* Mark all items loaded from BSP as "always present" */
         BotMarkLevelItemsPresent();
+
+        /* Force AAS to finish initializing before returning, instead of
+         * leaving it to finish incrementally across future
+         * Export_BotLibStartFrame calls (AAS_ContinueInit/
+         * AAS_ContinueInitReachability, be_aas_main.c/be_aas_reach.c).
+         *
+         * Discovered the hard way via real in-game testing (see report):
+         * game_q2 lazily dlopen()s this library and calls BotLoadMap ->
+         * BotSetupClient back-to-back the first time "addbot"/a bot-queue
+         * entry is processed, all within the same server frame, with zero
+         * intervening Export_BotLibStartFrame calls. The real
+         * BotAISetupClient (game_q3/ai_main.c) now correctly refuses to
+         * set up a client while AAS_Initialized() is false -- a real
+         * safety check the old hand-rolled Q2BotSetupClient never had --
+         * so without this, the very first bot added after any map load
+         * always fails ("AAS not initialized"), and game_q2's bl_spawn.c
+         * unloads the library entirely on that failure, repeating the
+         * same race on every subsequent attempt forever.
+         *
+         * AAS_StartFrame -> AAS_ContinueInit only needs to actually run
+         * once for a bspc-precompiled .aas file like this project ships
+         * (AAS_InitReachability, be_aas_reach.c, already marks
+         * reachability as done from the file's own data unless
+         * "forcereachability" is set) -- the loop is just a safety margin
+         * in case reachability genuinely does need to compute
+         * incrementally (e.g. an .aas file with no baked-in reachability
+         * data), bounded so a pathological map can't hang BotLoadMap
+         * forever. */
+        {
+            int warmup;
+            for (warmup = 0; warmup < 200 && !AAS_Initialized(); warmup++) {
+                AAS_StartFrame(AAS_Time() + warmup * 0.01f);
+            }
+            if (!AAS_Initialized()) {
+                botimport.Print(PRT_WARNING,
+                    "BotLoadMap: AAS did not finish initializing after %d warmup frames\n",
+                    warmup);
+            }
+        }
+
+        /* --- Real Q3's BotAILoadMap (game_q3/ai_main.c) equivalent ---
+         * game_q2/bl_main.c's BotInitLibrary already calls
+         * BotLibVarSet("maxclients", ...) before BotSetupLibrary/BotLoadMap
+         * ever run, so "maxclients" is already correct by this point;
+         * BotSetupDeathmatchAI (game_q3/ai_dmq3.c) reads a DIFFERENT
+         * LibVar name ("sv_maxclients", the real Q3 server cvar) into its
+         * own plain `maxclients` global -- mirror the value across so
+         * that read resolves correctly without hand-editing ai_dmq3.c.
+         * Likewise recompute "g_gametype" here (not just once per frame
+         * in Q2BotStartFrame) so BotSetupDeathmatchAI's own one-time
+         * `gametype = trap_Cvar_VariableIntegerValue("g_gametype")` read
+         * sees this map's real value, not a stale one from a previous
+         * map or the "0" seeded at library setup. */
+        LibVarSet("sv_maxclients", LibVarGetString("maxclients"));
+        Q2UpdateGametypeLibVar();
+
+        /* Real Q3's BotAISetup calls this to register bot_rocketjump/
+         * bot_grapple/etc. LibVars, set the plain gametype/maxclients
+         * globals every ported file outside this adapter reads directly,
+         * look up CTF flag goals when gametype is GT_CTF, and call
+         * BotInitWaypoints(). trap_Cvar_Register (ai_q2_shim.c) is
+         * idempotent (LibVar() no-ops if already registered), so calling
+         * this again on every map change/restart is safe. */
+        BotSetupDeathmatchAI();
+
+        /* Mirrors real Q3's BotAILoadMap: reset any already-active bots'
+         * state on a (re)load so stale goals/nodes from the previous map
+         * don't carry over. */
+        {
+            int i;
+            for (i = 0; i < MAX_CLIENTS; i++) {
+                if (botstates[i] && botstates[i]->inuse) {
+                    BotResetState(botstates[i]);
+                    botstates[i]->setupcount = 4;
+                }
+            }
+        }
     }
 
     /* Link item model indices from the game DLL's modelindexes[] table.
@@ -1076,206 +1100,226 @@ static int Q2BotLoadMap(char *mapname, int nummodelindexes, char *modelindex[],
     return BLERR_NOERROR;
 }
 
+/* Build a real Q3 bot_settings_t from the frozen q2_bot_settings_t ABI
+ * struct. settings->charactername has no home in bot_settings_t (real
+ * Q3 derives the bot's chat name from the character file itself via
+ * ClientName()/CHARACTERISTIC_CHAT_NAME, called from BotDeathmatchAI's
+ * one-time setup block, not from a passed-in settings struct) -- see the
+ * report for the trap_GetConfigstring gap this exposes.
+ * settings->team has no source in the frozen ABI at all; Q2's own CTF
+ * team assignment (CTFAssignTeam, game_q2/p_client.c) already runs
+ * before BotSetupClient (bl_spawn.c's BotLib_BotSetupClient), so leaving
+ * it empty and letting the ported code's own `team ""` EA_Command no-op
+ * is safe (plan's Phase 4 note). */
+static void Q2BuildBotSettings(bot_settings_t *out, const q2_bot_settings_t *in)
+{
+    float skill = LibVarGetValue("bot_skill");
+    if (skill < 1) skill = 4;   /* default: skilled but not expert */
+    if (skill > 5) skill = 5;
+
+    Com_Memset(out, 0, sizeof(*out));
+    Q_strncpyz(out->characterfile, in->characterfile, sizeof(out->characterfile));
+    out->skill = skill;
+    out->team[0] = '\0';
+}
+
 static int Q2BotSetupClient(int client, q2_bot_settings_t *settings)
 {
-    q2_botclient_t *bc;
-    char filename[Q2_MAX_FILEPATH];
-    char name[Q2_MAX_CHARACTERNAME];
-    char gender[16];
-    int  errnum;
+    bot_settings_t bs_settings;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
 
-    bc = &q2clients[client];
-    if (bc->inuse) {
+    if (botstates[client] && botstates[client]->inuse) {
         botimport.Print(PRT_WARNING,
             "BotSetupClient: client %d already setup\n", client);
         return Q2_BLERR_AICLIENTALREADYSETUP;
     }
 
-    Com_Memset(bc, 0, sizeof(*bc));
-    bc->aistate         = Q2AI_SEEK_LTG;
-    bc->lastchat_time   = -999.0f; /* "never chatted" — avoids cooldown block */
-    bc->enemy           = -1;
-    bc->enemy_hdist     = 9999;   /* no enemy yet — don't bias range weights */
-    bc->enemy_height    = 0;
-    bc->notblocked_time = -1.0f;  /* sentinel: first frame will set to AAS_Time() */
-    bc->lastkilledby    = -1;
-    bc->lastkilledplayer = -1;
-    bc->entergamechat   = true;
-    Com_Memcpy(&bc->settings, settings, sizeof(*settings));
+    Q2BuildBotSettings(&bs_settings, settings);
+    q2_lastweaponcmd[client] = 0;
 
-    /* Load character file (determines weights, chat, skills).
-     * Skill level from bot_skill cvar (1=beginner, 5=expert, default 4).
-     * Try the specified file first; fall back to our default character. */
-    {
-        float skill = LibVarGetValue("bot_skill");
-        if (skill < 1) skill = 4;   /* default: skilled but not expert */
-        if (skill > 5) skill = 5;
-        bc->character = BotLoadCharacter(settings->characterfile, skill);
-        if (!bc->character && settings->characterfile[0]) {
-            /* specified file failed — try default */
-            bc->character = BotLoadCharacter("bots/default_c.c", skill);
-        }
-    }
-    if (!bc->character) {
-        botimport.Print(PRT_WARNING,
-            "BotSetupClient: no character file loaded, using hardcoded defaults\n");
-    }
-
-    /* Cache personality traits from character file.
-     * Q3 reads these per-frame with trap_Characteristic_BFloat().
-     * We cache them once since they don't change during a game.
-     * Fallback values are for skill ~3 (moderate). */
-    if (bc->character) {
-        bc->attack_skill  = Characteristic_BFloat(bc->character, Q2CHAR_ATTACK_SKILL, 0, 1);
-        bc->aim_skill     = Characteristic_BFloat(bc->character, Q2CHAR_AIM_SKILL, 0, 1);
-        bc->aim_accuracy  = Characteristic_BFloat(bc->character, Q2CHAR_AIM_ACCURACY, 0, 1);
-        bc->reactiontime  = Characteristic_BFloat(bc->character, Q2CHAR_REACTIONTIME, 0, 5);
-        bc->alertness     = Characteristic_BFloat(bc->character, Q2CHAR_ALERTNESS, 0, 1);
-        bc->jumper        = Characteristic_BFloat(bc->character, Q2CHAR_JUMPER, 0, 1);
-        bc->croucher      = Characteristic_BFloat(bc->character, Q2CHAR_CROUCHER, 0, 1);
-        bc->firethrottle  = Characteristic_BFloat(bc->character, Q2CHAR_FIRETHROTTLE, 0, 1);
-        bc->camper        = Characteristic_BFloat(bc->character, Q2CHAR_CAMPER, 0, 1);
-        bc->easy_fragger  = Characteristic_BFloat(bc->character, Q2CHAR_EASY_FRAGGER, 0, 1);
-        bc->weaponjumping = Characteristic_BFloat(bc->character, Q2CHAR_WEAPONJUMPING, 0, 1);
-    } else {
-        bc->attack_skill  = 0.6f;
-        bc->aim_skill     = 0.6f;
-        bc->aim_accuracy  = 0.65f;
-        bc->reactiontime  = 0.7f;
-        bc->alertness     = 0.6f;
-        bc->jumper        = 0.5f;
-        bc->croucher      = 0.3f;
-        bc->firethrottle  = 0.6f;
-        bc->camper        = 0.1f;
-        bc->easy_fragger  = 0.5f;
-        bc->weaponjumping = 0.5f;
-    }
-
-    /* Goal state + item weights */
-    bc->goalstate = BotAllocGoalState(client);
-    if (bc->character) {
-        Characteristic_String(bc->character, Q2CHAR_ITEMWEIGHTS,
-                               filename, sizeof(filename));
-    } else {
-        Q_strncpyz(filename, "bots/default_i.c", sizeof(filename));
-    }
-    errnum = BotLoadItemWeights(bc->goalstate, filename);
-    if (errnum != BLERR_NOERROR)
-        botimport.Print(PRT_WARNING,
-            "BotSetupClient: BotLoadItemWeights(%s) failed: %d\n",
-            filename, errnum);
-
-    /* Weapon state + weapon weights */
-    bc->weaponstate = BotAllocWeaponState();
-    if (bc->character) {
-        Characteristic_String(bc->character, Q2CHAR_WEAPONWEIGHTS,
-                               filename, sizeof(filename));
-    } else {
-        Q_strncpyz(filename, "bots/default_w.c", sizeof(filename));
-    }
-    errnum = BotLoadWeaponWeights(bc->weaponstate, filename);
-    if (errnum != BLERR_NOERROR)
-        botimport.Print(PRT_WARNING,
-            "BotSetupClient: BotLoadWeaponWeights(%s) failed: %d\n",
-            filename, errnum);
-
-    /* Chat state */
-    bc->chatstate = BotAllocChatState();
-    if (bc->character) {
-        Characteristic_String(bc->character, Q2CHAR_CHAT_FILE,
-                               filename, sizeof(filename));
-        Characteristic_String(bc->character, Q2CHAR_CHAT_NAME,
-                               name, sizeof(name));
-        errnum = BotLoadChatFile(bc->chatstate, filename, name);
-        if (errnum != BLERR_NOERROR)
-            botimport.Print(PRT_WARNING,
-                "BotSetupClient: BotLoadChatFile(%s) failed: %d\n",
-                filename, errnum);
-
-        Characteristic_String(bc->character, Q2CHAR_GENDER, gender, sizeof(gender));
-        if      (*gender == 'f' || *gender == 'F')
-            BotSetChatGender(bc->chatstate, CHAT_GENDERFEMALE);
-        else if (*gender == 'm' || *gender == 'M')
-            BotSetChatGender(bc->chatstate, CHAT_GENDERMALE);
-        else
-            BotSetChatGender(bc->chatstate, CHAT_GENDERLESS);
-    }
-    BotSetChatName(bc->chatstate, settings->charactername, client);
-
-    bc->movestate = BotAllocMoveState();
-    bc->inuse = true;
-    return 1;  /* BotSetupClient returns true/false, not BLERR_ codes (see botlib.h) */
+    /* The real BotAISetupClient (game_q3/ai_main.c) loads the character
+     * file, allocates goal/weapon/chat/move states, and caches the
+     * personality traits itself (trap_Characteristic_BFloat calls spread
+     * throughout ai_dmq3.c) -- nothing left to hand-roll here. Returns
+     * true/false, not a BLERR_ code (matches q2_bot_export_t.BotSetupClient's
+     * documented contract). */
+    return BotAISetupClient(client, (struct bot_settings_s *)&bs_settings, false);
 }
 
 static int Q2BotShutdownClient(int client)
 {
-    q2_botclient_t *bc;
-
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
 
-    bc = &q2clients[client];
-    if (!bc->inuse) {
+    if (!botstates[client] || !botstates[client]->inuse) {
         botimport.Print(PRT_WARNING,
             "BotShutdownClient: client %d not setup\n", client);
         return Q2_BLERR_AICLIENTALREADYSHUTDOWN;
     }
 
-    BotFreeMoveState(bc->movestate);
-    BotFreeGoalState(bc->goalstate);
-    BotFreeChatState(bc->chatstate);
-    BotFreeWeaponState(bc->weaponstate);
-    if (bc->character) BotFreeCharacter(bc->character);
-
-    Com_Memset(bc, 0, sizeof(*bc));
+    BotAIShutdownClient(client, false);
     return Q2_BLERR_NOERROR;
 }
 
 static int Q2BotMoveClient(int oldclnum, int newclnum)
 {
-    q2_botclient_t *src, *dst;
+    bot_state_t *bs;
 
-    if (oldclnum < 0 || oldclnum >= Q2_BOTLIB_MAX_CLIENTS)
+    if (oldclnum < 0 || oldclnum >= MAX_CLIENTS)
         return Q2_BLERR_AIMOVEINACTIVECLIENT;
-    if (newclnum < 0 || newclnum >= Q2_BOTLIB_MAX_CLIENTS)
+    if (newclnum < 0 || newclnum >= MAX_CLIENTS)
         return Q2_BLERR_AIMOVETOACTIVECLIENT;
 
-    src = &q2clients[oldclnum];
-    dst = &q2clients[newclnum];
-    if (!src->inuse) return Q2_BLERR_AIMOVEINACTIVECLIENT;
+    bs = botstates[oldclnum];
+    if (!bs || !bs->inuse) return Q2_BLERR_AIMOVEINACTIVECLIENT;
 
-    Com_Memcpy(dst, src, sizeof(*dst));
-    Com_Memset(src, 0, sizeof(*src));
+    /* Real Q3 has no equivalent "move a live bot to a different client
+     * slot" concept -- botstates[] is indexed by client number for the
+     * bot's whole lifetime. This ABI entry point only exists for a
+     * Gladiator-bot-era mechanism (game_q2/bl_spawn.c's
+     * BotMoveToFreeClientEdict). Move the allocated bot_state_t itself
+     * between slots and fix up the two fields that encode the slot
+     * number. */
+    botstates[newclnum] = bs;
+    botstates[oldclnum] = NULL;
+    bs->client    = newclnum;
+    bs->entitynum = newclnum;
+    q2_lastweaponcmd[newclnum] = q2_lastweaponcmd[oldclnum];
+    q2_lastweaponcmd[oldclnum] = 0;
+
     return Q2_BLERR_NOERROR;
 }
 
 static int Q2BotClientSettings(int client, q2_bot_clientsettings_t *settings)
 {
-    q2_botclient_t *bc;
+    bot_state_t *bs;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
-    bc = &q2clients[client];
-    if (!bc->inuse) return Q2_BLERR_SETTINGSINACTIVECLIENT;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return Q2_BLERR_SETTINGSINACTIVECLIENT;
 
-    BotSetChatName(bc->chatstate, settings->netname, client);
+    BotSetChatName(bs->cs, settings->netname, client);
     return Q2_BLERR_NOERROR;
 }
 
 static int Q2BotSettings(int client, q2_bot_settings_t *settings)
 {
-    q2_botclient_t *bc;
+    bot_state_t *bs;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
-    bc = &q2clients[client];
-    if (!bc->inuse) return Q2_BLERR_SETTINGSINACTIVECLIENT;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return Q2_BLERR_SETTINGSINACTIVECLIENT;
 
-    Com_Memcpy(&bc->settings, settings, sizeof(*settings));
+    Q2BuildBotSettings(&bs->settings, settings);
     return Q2_BLERR_NOERROR;
+}
+
+/* ====================================================================
+ * Phase 2 (Problem 1 fix): CTF flag at-base/away status.
+ *
+ * Real Q3 feeds bs->redflagstatus/blueflagstatus (ai_main.h's own field
+ * comments literally say "0 = at base, 1 = not at base" -- a plain
+ * boolean, unlike the 4-state neutralflagstatus) from a CS_FLAGSTATUS
+ * configstring broadcast this Q2 port has no equivalent of
+ * (trap_GetConfigstring is a permanent stub -- see ai_q2_shim.c).
+ *
+ * Derived here instead from data already flowing through the existing
+ * per-frame entity feed: ctf_redflag.entitynum/ctf_blueflag.entitynum
+ * (game_q3/ai_dmq3.c bot_goal_t globals, already populated by the
+ * existing trap_BotGetLevelItemGoal(-1,"Red Flag"/"Blue Flag",...) call
+ * in BotSetupDeathmatchAI) give each flag ITEM's live AAS entity number.
+ *
+ * Verified against the real game_q2/g_ctf.c (not guessed): a Q2 CTF flag
+ * has exactly ONE on-field representation while at home -- the entity
+ * spawned by CTFFlagSetup(), solid=SOLID_TRIGGER, no SVF_NOCLIENT. The
+ * instant it's taken (CTFPickup_Flag): `ent->svflags |= SVF_NOCLIENT;
+ * ent->solid = SOLID_NOT;` -- and it stays exactly that way, whether
+ * currently carried or lying dropped elsewhere as a SEPARATE entity
+ * spawned by CTFDeadDropFlag, until CTFResetFlag() restores it on
+ * capture/return/auto-return. So the original flag entity's solid state
+ * alone is a complete, correct 0/1 signal; no need to locate the
+ * separate dropped-item entity at all.
+ *
+ * This is reinforced by a second, independent signal: game_q2/g_main.c's
+ * per-frame entity feed loop SKIPS calling BotUpdateEntity() entirely for
+ * any SVF_NOCLIENT entity (`if (!(ent->svflags & SVF_NOCLIENT))
+ * BotLib_BotUpdateEntity(ent);`, g_main.c:565), and botlib/be_aas_entity.c's
+ * AAS_StartFrame() invalidates every AAS entity (.valid=false) at the top
+ * of each server frame, only setting it back to true for entities that
+ * get a fresh update that same frame -- so a taken flag's entity also
+ * reports .valid=false from the very next frame onward, for as long as
+ * it's hidden.
+ *
+ * IMPORTANT ordering requirement: Q2AI_UpdateCTFFlagStatus() must run
+ * BEFORE Export_BotLibStartFrame() each frame (see Q2BotStartFrame
+ * below). That call cascades straight into AAS_StartFrame()'s invalidate
+ * pass for THIS frame, and this frame's real entity updates
+ * (game_q2/g_main.c's loop) don't run until AFTER BotStartFrame returns
+ * (g_main.c:522 vs :560-569). Reading AAS_EntityInfo() any time after
+ * that invalidate call but before this frame's updates land would see
+ * EVERY entity, flags included, as freshly invalidated and not yet
+ * re-validated -- permanently "gone", every single frame, regardless of
+ * the truth. Running before that call instead observes the fully-settled
+ * result of the PREVIOUS frame's feed: one server frame of latency,
+ * imperceptible for a binary status flag.
+ * ==================================================================== */
+extern bot_goal_t ctf_redflag;
+extern bot_goal_t ctf_blueflag;
+extern int        gametype;
+
+static int q2_redflagstatus;
+static int q2_blueflagstatus;
+
+static int Q2AI_FlagAwayFromBase(bot_goal_t *flaggoal)
+{
+    aas_entityinfo_t info;
+    vec3_t           delta;
+
+    if (flaggoal->entitynum <= 0) return 0;
+
+    AAS_EntityInfo(flaggoal->entitynum, &info);
+    if (!info.valid || info.solid == SOLID_NOT) return 1;
+
+    /* Defense in depth (per the plan): if some future map/mod variant
+     * keeps the flag "valid" and solid while away from base instead of
+     * hiding it Q2-CTF-style, catch it via displacement from its cached
+     * spawn origin too. Q2 CTF flags don't otherwise move while at rest
+     * (CTFFlagSetup settles them once at load time and nothing
+     * re-simulates them afterwards), so this generous threshold won't
+     * false-positive on ordinary physics settling noise. */
+    VectorSubtract(info.origin, flaggoal->origin, delta);
+    if (VectorLength(delta) > 64.0f) return 1;
+
+    return 0;
+}
+
+static void Q2AI_UpdateCTFFlagStatus(void)
+{
+    if (gametype != 4 /* GT_CTF, see Q2UpdateGametypeLibVar */ || !AAS_Initialized()) {
+        q2_redflagstatus  = 0;
+        q2_blueflagstatus = 0;
+        return;
+    }
+    q2_redflagstatus  = Q2AI_FlagAwayFromBase(&ctf_redflag);
+    q2_blueflagstatus = Q2AI_FlagAwayFromBase(&ctf_blueflag);
+}
+
+/* Phase 2 (Problem 2 fix): exposes the already-existing, already-wired
+ * q2_bot_import_t.OnSameTeam callback (frozen ABI, unused elsewhere in
+ * this adapter until now) to game_q3/ai_dmq3.c's BotSameTeam(), which
+ * needs a pairwise "are these two clients on the same real team" answer
+ * and can't reach the file-local `q2import` struct directly. Client
+ * numbers in (0-indexed, matching bs->client/ai_dmq3.c's own convention)
+ * -> Q2 g_edicts[] numbers out (1-indexed), exactly like
+ * Q2BotUpdateClient's client+1 elsewhere in this file. */
+int Q2_ClientsOnSameTeam(int client1, int client2)
+{
+    if (!q2import.OnSameTeam) return 0;
+    return q2import.OnSameTeam(client1 + 1, client2 + 1);
 }
 
 /* #6 — BotUpdateEntityItems timing: Q3 calls this at ~0.3s intervals
@@ -1284,7 +1328,28 @@ static float q2_entityitems_time;
 
 static int Q2BotStartFrame(float time)
 {
-    int ret = Export_BotLibStartFrame(time);
+    int ret;
+
+    /* Must run BEFORE Export_BotLibStartFrame(): see the long comment on
+     * Q2AI_UpdateCTFFlagStatus() above for why (that call's
+     * AAS_StartFrame -> AAS_InvalidateEntities() cascade would otherwise
+     * make every entity, flags included, look "gone" for the rest of this
+     * function, every single frame). */
+    Q2AI_UpdateCTFFlagStatus();
+
+    ret = Export_BotLibStartFrame(time);
+
+    /* Real Q3's BotAIStartFrame (game_q3/ai_main.c) -- deleted in Phase 0
+     * as Q3-engine-shaped dead code -- was the ONLY place floattime ever
+     * got assigned (floattime = trap_AAS_Time();); every ported file's
+     * FloatTime() macro (ai_main.h: #define FloatTime() floattime) reads
+     * it. Without this, FloatTime() would silently return 0 forever and
+     * every timer-driven decision in ai_dmnet.c/ai_dmq3.c/ai_team.c/
+     * ai_chat.c would misbehave -- confirmed against ioq3's real
+     * BotAIStartFrame (code/game/ai_main.c:1551) to be sure this is what
+     * real Q3 does, not a guess. */
+    floattime = AAS_Time();
+
     /* Update dynamic item entities at 0.3s intervals (Q3 ai_main.c:1471) */
     if (AAS_Time() - q2_entityitems_time >= 0.3f) {
         BotUpdateEntityItems();
@@ -1292,40 +1357,96 @@ static int Q2BotStartFrame(float time)
     }
     /* Update gametype for CTF/team detection.  The game DLL sets
      * "ctf", "teamplay", and "arena" LibVars at init time. */
-    {
-        float ctf_val = LibVarGetValue("ctf");
-        float tp_val  = LibVarGetValue("teamplay");
-        float ar_val  = LibVarGetValue("arena");
-        if (ctf_val)
-            LibVarSet("g_gametype", "4"); /* GT_CTF */
-        else if (tp_val || ar_val)
-            LibVarSet("g_gametype", "3"); /* GT_TEAM */
-        else
-            LibVarSet("g_gametype", "0"); /* GT_FFA */
-    }
+    Q2UpdateGametypeLibVar();
     return ret;
 }
 
 static int Q2BotUpdateClient(int client, q2_bot_updateclient_t *buc)
 {
     bot_entitystate_t state;
-    q2_botclient_t   *bc;
+    bot_state_t      *bs;
+    int               i;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
-    bc = &q2clients[client];
-    if (!bc->inuse) return Q2_BLERR_AIUPDATEINACTIVECLIENT;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return Q2_BLERR_AIUPDATEINACTIVECLIENT;
 
-    /* Cache Q2 state for use in BotAI */
-    VectorCopy(buc->origin,     bc->origin);
-    VectorCopy(buc->velocity,   bc->velocity);
-    VectorCopy(buc->viewangles, bc->viewangles);
-    VectorCopy(buc->viewoffset, bc->viewoffset);
-    bc->pm_flags = buc->pm_flags;
-    bc->pm_type  = buc->pm_type;
-    Com_Memcpy(bc->inventory, buc->inventory, sizeof(bc->inventory));
-    bc->health = buc->stats[1]; /* STAT_HEALTH = 1 in Q2 */
-    bc->armor  = buc->stats[5]; /* #8: STAT_ARMOR = 5 in Q2 */
+    /* --- Populate bs->cur_ps (the REAL Q3 playerState_t) with exactly
+     * the fields the real ported code reads this frame: BotAI() (delta
+     * angle math), BotSetupForMovement/BotIsDead/BotIsObserver/
+     * BotIntermission (game_q3/ai_dmq3.c) -- confirmed by reading each of
+     * those functions directly. Everything else in playerState_t
+     * (stats[]/ammo[]/powerups[]/weapon/etc.) is intentionally left
+     * zeroed: BotUpdateInventory's replacement (game_q3/ai_dmq3.c) reads
+     * bs->inventory[] instead (populated below), and no other ported
+     * code path was found to depend on the rest. */
+    VectorCopy(buc->origin,   bs->cur_ps.origin);
+    VectorCopy(buc->velocity, bs->cur_ps.velocity);
+    bs->cur_ps.viewheight = (int)buc->viewoffset[2];
+    for (i = 0; i < 3; i++)
+        bs->cur_ps.delta_angles[i] = ANGLE2SHORT(buc->delta_angles[i]);
+
+    switch (buc->pm_type) {
+        case Q2PM_DEAD:
+        case Q2PM_GIB:       bs->cur_ps.pm_type = Q3PM_DEAD;      break;
+        case Q2PM_SPECTATOR: bs->cur_ps.pm_type = Q3PM_SPECTATOR; break;
+        case Q2PM_FREEZE:    bs->cur_ps.pm_type = Q3PM_FREEZE;    break;
+        default:              bs->cur_ps.pm_type = Q3PM_NORMAL;    break;
+    }
+
+    /* Q2's PMF_* bit positions (game_q2/q_shared.h) differ from Q3's
+     * (botlib/ai_q2_compat.h) -- translate by meaning, not by raw value.
+     * PMF_TIME_TELEPORT -> PMF_TIME_KNOCKBACK: real Q3's
+     * BotSetupForMovement checks PMF_TIME_KNOCKBACK (not a dedicated
+     * teleport flag) + pm_time>0 to detect "just displaced, don't fight
+     * movement prediction" -- Q2's PMF_TIME_TELEPORT is the equivalent
+     * "pm_time is non-moving time after a non-normal move" signal. */
+    {
+        int flags = 0;
+        if (buc->pm_flags & 1)  flags |= Q3PMF_DUCKED;        /* Q2 PMF_DUCKED */
+        if (buc->pm_flags & 8)  flags |= Q3PMF_TIME_WATERJUMP;/* Q2 PMF_TIME_WATERJUMP */
+        if (buc->pm_flags & 32) flags |= Q3PMF_TIME_KNOCKBACK;/* Q2 PMF_TIME_TELEPORT */
+        bs->cur_ps.pm_flags = flags;
+    }
+    bs->cur_ps.pm_time = buc->pm_time;
+    /* Q2 doesn't send a groundEntityNum; infer on-ground from
+     * PMF_ON_GROUND (bit 4), matching Q2BotUpdateEntity's identical
+     * convention below for other entities. */
+    bs->cur_ps.groundEntityNum = (buc->pm_flags & 4) ? 0 : ENTITYNUM_NONE;
+    bs->cur_ps.persistant[Q3PERS_SCORE] = buc->stats[14]; /* Q2 STAT_FRAGS */
+
+    /* --- Populate bs->inventory[] straight from Q2's real per-client
+     * inventory + health/armor stats. See BotUpdateInventory's
+     * replacement (game_q3/ai_dmq3.c) for why a direct copy is correct:
+     * Q2's item indices already match assets/botfiles/inv.h's
+     * INVENTORY_* slots (both MAX_ITEMS/Q2_MAX_ITEMS are 256). --- */
+    Com_Memcpy(bs->inventory, buc->inventory, sizeof(bs->inventory));
+    bs->inventory[28] = buc->stats[1]; /* INVENTORY_HEALTH (inv.h); Q2 STAT_HEALTH=1 */
+    bs->inventory[29] = buc->stats[5]; /* INVENTORY_ARMOR (ai_q2_compat.h); Q2 STAT_ARMOR=5 */
+
+    /* --- Phase 2 (Problem 2 fix): derive this bot's REAL CTF team.
+     * ai_dmq3.c's BotTeam() can no longer read it via trap_GetConfigstring
+     * (permanent stub -- see ai_q2_shim.c and the report), so it's sourced
+     * here instead from the ordinary stats[] array, already part of the
+     * frozen ABI: game_q2/g_ctf.c's SetCTFStats() (run every server frame
+     * for every client, bots included, via p_hud.c's G_SetStats()) sets
+     *   stats[22] (STAT_CTF_JOINED_TEAM1_PIC) nonzero <=> resp.ctf_team==CTF_TEAM1 (Red)
+     *   stats[23] (STAT_CTF_JOINED_TEAM2_PIC) nonzero <=> resp.ctf_team==CTF_TEAM2 (Blue)
+     * Confirmed correctly labeled, not just internally consistent:
+     * game_q2/g_items.c's item_flag_team1/item_flag_team2 pickup names are
+     * literally "Red Flag"/"Blue Flag", matching ctf_redflag/EF_FLAG1 and
+     * ctf_blueflag/EF_FLAG2 respectively. --- */
+    if (buc->stats[22])      bs->q2_realctfteam = Q3TEAM_RED;
+    else if (buc->stats[23]) bs->q2_realctfteam = Q3TEAM_BLUE;
+    else                     bs->q2_realctfteam = Q3TEAM_FREE;
+
+    /* Same trick, for BotChat_HitTalking/HitNoDeath/HitNoKill (ai_chat.c):
+     * real lasthurt_client/mod (game_q2/g_combat.c), piggybacked through
+     * the otherwise-unused stats[28]/[29] by game_q2/bl_main.c. See
+     * ai_main.h's q2_reallasthurt_client/_mod comment. */
+    bs->q2_reallasthurt_client = buc->stats[28];
+    bs->q2_reallasthurt_mod    = buc->stats[29];
 
     /* Translate to Q3 entity state for AAS entity tracking */
     Com_Memset(&state, 0, sizeof(state));
@@ -1435,12 +1556,6 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
              * model in modelindex2.  Set state.weapon so EntityIsShooting()
              * and other Q3 checks can detect the player's current weapon. */
             state.weapon = bue->modelindex2;
-            /* Store entity effects on the bot's own struct for CTF flag detection */
-            {
-                int cl = ent - 1;
-                if (cl >= 0 && cl < Q2_BOTLIB_MAX_CLIENTS && q2clients[cl].inuse)
-                    q2clients[cl].effects = bue->effects;
-            }
         } else if (ent > 0 && bue->solid == 3 /* SOLID_BSP */ && bue->modelindex > 0) {
             /* Skip entity 0 (worldspawn) — it has SOLID_BSP + modelindex
              * but is NOT a mover.  Without this check, the world entity
@@ -1510,1642 +1625,114 @@ static int Q2BotAddPointLight(vec3_t origin, int ent, float radius,
 }
 
 /* ====================================================================
- * Q2BotAggression — evaluate combat readiness based on weapon loadout
- *
- * Returns 0-100.  Values below 50 mean the bot should avoid combat and
- * focus on acquiring better weapons/items.  Mirrors Q3's BotAggression()
- * (ai_dmq3.c:2197) and the Gladiator bot's combat-feasibility check.
- *
- * Q2 inventory indices (from g_items.c itemlist[]):
- *    8=shotgun  9=supershotgun 10=machinegun 11=chaingun
- *   13=grenadelauncher 14=rocketlauncher 15=hyperblaster
- *   16=railgun 17=bfg
- *   12=ammo_grenades 18=shells 19=bullets 20=cells
- *   21=rockets 22=slugs   23=item_quad
- * ==================================================================== */
-static int Q2BotAggression(q2_botclient_t *bc)
-{
-    int *inv = bc->inventory;
-
-    /* Very low health — avoid all combat */
-    if (bc->health < 40) return 0;
-
-    /* Quad damage — always fight */
-    if (inv[23] > 0) return 100;
-
-    /* Enemy is way higher than bot — extreme height disadvantage.
-     * Mirrors Q3's BotAggression (ai_dmq3.c:2210). */
-    if (bc->enemy_height > 200) return 0;
-
-    /* Low health + no strong weapon — don't fight */
-    if (bc->health < 60 &&
-        inv[14] == 0 && inv[16] == 0 && inv[17] == 0)
-        return 0;
-
-    /* Low health + no armor — disengage.
-     * Mirrors Q3: health<80 && armor<40 → return 0.
-     * #8 — Q2 armor value comes from stats[STAT_ARMOR=5], not inventory.
-     * We store it in bc->armor (populated from BotUpdateClient). */
-    if (bc->health < 80) {
-        if (bc->armor < 40) return 0;
-    }
-
-    /* Check from strongest to weakest weapon + sufficient ammo */
-    if (inv[17] > 0 && inv[20] > 7)   return 100; /* BFG + cells */
-    if (inv[16] > 0 && inv[22] > 5)   return 95;  /* Railgun + slugs */
-    if (inv[14] > 0 && inv[21] > 5)   return 90;  /* Rocket Launcher + rockets */
-    if (inv[15] > 0 && inv[20] > 40)  return 90;  /* Hyperblaster + cells */
-    if (inv[11] > 0 && inv[19] > 50)  return 85;  /* Chaingun + bullets */
-    if (inv[13] > 0 && inv[12] > 10)  return 80;  /* Grenade Launcher + grenades */
-    if (inv[9]  > 0 && inv[18] > 10)  return 60;  /* Super Shotgun + shells */
-    if (inv[10] > 0 && inv[19] > 30)  return 50;  /* Machinegun + bullets */
-    if (inv[8]  > 0 && inv[18] > 10)  return 50;  /* Shotgun + shells */
-
-    /* Blaster only, or weapons without ammo */
-    return 0;
-}
-
-/* ====================================================================
  * Q2BotCheckGrenades — dodge grenades on the ground
  *
- * Scans entities for Q2 grenades (identified by EF_GRENADE in the
- * effects field) and places avoid spots so the AAS pathfinder routes
- * around them.  Mirrors Q3's BotCheckForGrenades (ai_dmq3.c:4718)
- * which checks state->eType == ET_MISSILE && state->weapon ==
- * WP_GRENADE_LAUNCHER.
- *
- * Only grenades are avoided — rockets and blaster bolts travel too
- * fast to dodge via AAS navigation and would flood the 32-slot
- * avoid-spot array.  Grenades bounce on the ground and sit still
- * before exploding, so even zero-velocity grenades are threats.
+ * Real Q3's BotCheckSnapshot (game_q3/ai_dmq3.c, called from
+ * BotDeathmatchAI) drives grenade avoidance via BotCheckForGrenades,
+ * fed by a Q3 snapshot-entity loop this Q2 port has no equivalent for
+ * (trap_BotGetSnapshotEntity is stubbed to "no more entities" -- see
+ * botlib/ai_q2_shim.c). Per the plan, BotCheckSnapshot's replacement
+ * (game_q3/ai_dmq3.c) is a no-op and this equivalent scan runs from here
+ * instead, called from Q2BotAI just below BEFORE the real BotAI() (so
+ * avoid-spots are fresh when that same call's BotMoveToGoal consults
+ * them). Scans entities for Q2 grenades (identified by the EF_GRENADE
+ * effects bit, cached per-entity in q2_entvelocity[] by
+ * Q2BotUpdateEntity -- aas_entityinfo_t itself carries no effects/weapon
+ * detail fine-grained enough to tell a grenade apart from a rocket or
+ * blaster bolt, all three of which are classified plain ET_MISSILE).
+ * Only grenades are avoided -- rockets and blaster bolts travel too fast
+ * to dodge via AAS navigation and would flood the 32-slot avoid-spot
+ * array.
  * ==================================================================== */
-static void Q2BotCheckGrenades(q2_botclient_t *bc)
+static void Q2BotCheckGrenades(bot_state_t *bs)
 {
     int ent;
     aas_entityinfo_t entinfo;
     vec3_t diff;
 
-    BotAddAvoidSpot(bc->movestate, vec3_origin, 0, AVOID_CLEAR);
+    BotAddAvoidSpot(bs->ms, vec3_origin, 0, AVOID_CLEAR);
 
     for (ent = AAS_NextEntity(0); ent; ent = AAS_NextEntity(ent)) {
         if (AAS_EntityType(ent) != 3 /* ET_MISSILE */) continue;
-        /* Check the cached Q2 effects flags: only avoid actual grenades.
-         * Q2_EF_GRENADE (0x20) is set by the engine on grenade entities
-         * for trail rendering — it's the authoritative signal, just like
-         * Q3 checks state->weapon == WP_GRENADE_LAUNCHER. */
         if (ent < 0 || ent >= Q2_MAX_ENTITIES) continue;
         if (!(q2_entvelocity[ent].effects & Q2_EF_GRENADE)) continue;
         AAS_EntityInfo(ent, &entinfo);
         if (!entinfo.valid) continue;
         /* Only nearby grenades */
-        VectorSubtract(entinfo.origin, bc->origin, diff);
+        VectorSubtract(entinfo.origin, bs->cur_ps.origin, diff);
         if (VectorLength(diff) > 400.0f) continue;
-        BotAddAvoidSpot(bc->movestate, entinfo.origin, 160, AVOID_ALWAYS);
+        BotAddAvoidSpot(bs->ms, entinfo.origin, 160, AVOID_ALWAYS);
     }
 }
 
 /* ====================================================================
- * Q2BotCheckAir — track breathing, detect water/lava/slime hazards
+ * Q2BotAI — per-bot AI think, once per server frame
  *
- * Updates lastair_time when not submerged.  The adapter currently uses
- * this for awareness only; future versions could force seek-air goals.
- * Mirrors Q3's BotCheckAir (ai_dmq3.c:5063).
+ * Much-shrunk from the previous hand-rolled AINode-alike state machine:
+ * this now just bridges into the real Q3 AI (game_q3/ai_main.c's BotAI,
+ * which itself calls BotDeathmatchAI -> the real ai_dmnet.c state
+ * machine / ai_dmq3.c combat+goal logic / ai_chat.c chat triggers).
+ * bs->cur_ps and bs->inventory[] are already populated for this frame by
+ * Q2BotUpdateClient, which the game DLL's own frame loop (g_main.c)
+ * guarantees runs immediately before this for the same client (see
+ * report). No dead-bot special case is needed here: BotIsDead(bs) inside
+ * the real ai_dmnet.c already routes into AIEnter_Respawn, which calls
+ * trap_EA_Respawn(bs->client) -- translated below by the existing,
+ * unchanged Q3ActionsToQ2 bit mapping into Q2_ACTION_RESPAWN exactly
+ * like every other queued action.
  * ==================================================================== */
-static void Q2BotCheckAir(q2_botclient_t *bc)
-{
-    int contents = q2import.PointContents(bc->origin);
-    /* Q2: CONTENTS_WATER = 8, CONTENTS_SLIME = 16, CONTENTS_LAVA = 32 */
-    if (!(contents & (8 | 16 | 32))) {
-        bc->lastair_time = AAS_Time();
-        return;
-    }
-
-    /* Submerged for > 6 seconds: push an air-seeking goal.
-     * Mirrors Q3's BotGoForAir (ai_dmnet.c:156).
-     * Trace upward to find the water surface, create a goal there,
-     * and push it onto the goal stack so BotMoveToGoal navigates up. */
-    if (bc->lastair_time < AAS_Time() - 6.0f) {
-        vec3_t above;
-        bsp_trace_t trace;
-        int above_contents;
-        VectorCopy(bc->origin, above);
-        above[2] += 1000.0f;
-        trace = q2import.Trace(bc->origin, NULL, NULL, above,
-                               -1, 1 /* CONTENTS_SOLID */);
-        /* Check if the trace endpoint is above water */
-        above_contents = q2import.PointContents(trace.endpos);
-        if (!(above_contents & (8 | 16 | 32))) {
-            /* Found air! Push an air goal onto the goal stack. */
-            bot_goal_t airgoal;
-            Com_Memset(&airgoal, 0, sizeof(airgoal));
-            VectorCopy(trace.endpos, airgoal.origin);
-            airgoal.origin[2] -= 2.0f;  /* just inside the water surface */
-            airgoal.areanum = AAS_PointAreaNum(airgoal.origin);
-            airgoal.mins[0] = -8; airgoal.mins[1] = -8; airgoal.mins[2] = -8;
-            airgoal.maxs[0] =  8; airgoal.maxs[1] =  8; airgoal.maxs[2] =  8;
-            if (airgoal.areanum > 0 && !bc->hasnbg) {
-                BotPushGoal(bc->goalstate, &airgoal);
-                bc->hasnbg = true;
-            }
-        }
-    }
-}
-
-/* ====================================================================
- * Q2BotCheckBlocked — handle stuck bots and movement failures
- *
- * Examines moveresult.blocked and detects position stalls.  If stuck,
- * attempts random movement or sideward avoidance.  Mirrors Q3's
- * BotAIBlocked (ai_dmq3.c:4436).
- * ==================================================================== */
-static void Q2BotCheckBlocked(int client, q2_botclient_t *bc,
-                               bot_moveresult_t *moveresult)
-{
-    float now = AAS_Time();
-
-    /* First-frame sentinel: initialize timer to current time so the stall
-     * detection doesn't fire on the very first frame (when notblocked_time
-     * was 0 and (now - 0) > 2.0 was always true — the original regression). */
-    if (bc->notblocked_time < 0.0f) {
-        bc->notblocked_time = now;
-        VectorCopy(bc->origin, bc->lastorigin);
-        return;
-    }
-
-    /* #8 — Enhanced blocked handling mirroring Q3's BotAIBlocked.
-     * If blocked, try sideward movement and flip avoidance direction. */
-    if (!moveresult->blocked) {
-        bc->notblocked_time = now;
-    } else if (moveresult->type == RESULTTYPE_INSOLIDAREA) {
-        /* Stuck inside solid — random direction escape */
-        vec3_t rdir;
-        rdir[0] = (float)(rand() % 200 - 100);
-        rdir[1] = (float)(rand() % 200 - 100);
-        rdir[2] = 0;
-        VectorNormalize(rdir);
-        BotMoveInDirection(bc->movestate, rdir, 400, MOVE_WALK);
-        /* Reset avoid reach to force re-evaluation of routes.
-         * Mirrors Q3's trap_BotResetAvoidReach in BotAIBlocked. */
-        BotResetAvoidReach(bc->movestate);
-    } else if (moveresult->blocked) {
-        /* Blocked by an entity — try sideward movement.
-         * Mirrors Q3's BotAIBlocked sideward avoidance (ai_dmq3.c:4510). */
-        vec3_t hordir, sideward, up;
-        VectorSet(up, 0, 0, 1);
-        hordir[0] = moveresult->movedir[0];
-        hordir[1] = moveresult->movedir[1];
-        hordir[2] = 0;
-        if (VectorNormalize(hordir) < 0.1f) {
-            float yaw = (float)(rand() % 360);
-            hordir[0] = cos(DEG2RAD(yaw));
-            hordir[1] = sin(DEG2RAD(yaw));
-            hordir[2] = 0;
-        }
-        CrossProduct(hordir, up, sideward);
-        if (bc->flags & BFL_AVOIDRIGHT)
-            VectorNegate(sideward, sideward);
-        if (!BotMoveInDirection(bc->movestate, sideward, 400, MOVE_WALK)) {
-            bc->flags ^= BFL_AVOIDRIGHT;
-            VectorNegate(sideward, sideward);
-            BotMoveInDirection(bc->movestate, sideward, 400, MOVE_WALK);
-        }
-        /* After 0.4s blocked, reset goals to try another path */
-        if (bc->notblocked_time < now - 0.4f) {
-            bc->ltg_check_time = 0; /* force LTG re-evaluation */
-        }
-    }
-
-    /* Stall detection: if bot hasn't moved > 5 units in 3 seconds, nudge.
-     * Only triggers after sustained stillness, not transient pauses
-     * (waiting for elevator, etc.). */
-    {
-        vec3_t diff;
-        VectorSubtract(bc->origin, bc->lastorigin, diff);
-        if (VectorLength(diff) >= 5.0f) {
-            /* Bot is moving — reset stall timer */
-            bc->notblocked_time = now;
-        } else if ((now - bc->notblocked_time) > 3.0f) {
-            /* Stuck for 3+ seconds — random nudge */
-            vec3_t rdir;
-            rdir[0] = (float)(rand() % 200 - 100);
-            rdir[1] = (float)(rand() % 200 - 100);
-            rdir[2] = 0;
-            VectorNormalize(rdir);
-            BotMoveInDirection(bc->movestate, rdir, 400, MOVE_WALK);
-            bc->notblocked_time = now;
-        }
-    }
-    VectorCopy(bc->origin, bc->lastorigin);
-}
-
-/* ====================================================================
- * Q2BotAttackMove — combat movement: strafing, jumping, distance mgmt
- *
- * Ported from Q3's BotAttackMove (ai_dmq3.c:2635-2765).  During
- * BATTLE_FIGHT, the bot circle-strafes, jumps, crouches, and manages
- * distance to the enemy instead of standing still.
- * ==================================================================== */
-#define IDEAL_ATTACKDIST  200.0f
-
-static void Q2BotAttackMove(int client, q2_botclient_t *bc, int enemy)
-{
-    aas_entityinfo_t entinfo;
-    vec3_t forward, backward, sideward, hordir;
-    vec3_t up = {0, 0, 1};
-    float dist, strafechange_time;
-    int movetype, i;
-
-    AAS_EntityInfo(enemy, &entinfo);
-    if (!entinfo.valid) return;
-
-    /* Direction and distance to enemy */
-    VectorSubtract(entinfo.origin, bc->origin, forward);
-    dist = VectorNormalize(forward);
-    VectorNegate(forward, backward);
-
-    /* Movement type: walk, jump, or crouch.
-     * Uses personality traits (jumper, croucher) from character file.
-     * Mirrors Q3's BotAttackMove (ai_dmq3.c:2665-2690). */
-    movetype = MOVE_WALK;
-    if (bc->attackjump_time < AAS_Time()) {
-        if ((float)(rand() & 0x7FFF) / 0x7FFF < bc->jumper * 0.1f) {
-            movetype = MOVE_JUMP;
-            bc->attackjump_time = AAS_Time() + 1.0f;
-        }
-    }
-    if (movetype != MOVE_JUMP && bc->attackcrouch_time < AAS_Time()) {
-        if ((float)(rand() & 0x7FFF) / 0x7FFF < bc->croucher * 0.1f) {
-            movetype = MOVE_CROUCH;
-            bc->attackcrouch_time = AAS_Time() + 1.0f;
-        }
-    }
-
-    /* Randomly back away 10% of the time to be less predictable.
-     * Mirrors Q3 ai_dmq3.c:2694-2700. */
-    if ((float)(rand() & 0x7FFF) / 0x7FFF < 0.1f) {
-        BotMoveInDirection(bc->movestate, backward, 400, movetype);
-        return;
-    }
-
-    /* Low-skill bots: just walk toward/away from enemy */
-    if (bc->attack_skill <= 0.4f) {
-        if (dist > IDEAL_ATTACKDIST + 40.0f)
-            BotMoveInDirection(bc->movestate, forward, 400, movetype);
-        else if (dist < IDEAL_ATTACKDIST - 40.0f)
-            BotMoveInDirection(bc->movestate, backward, 400, movetype);
-        return;
-    }
-
-    /* Skilled bots: circle-strafe */
-    bc->attackstrafe_time += bc->enemy_time > 0 ? 0.1f : 0.0f; /* ~thinktime */
-    strafechange_time = 0.4f + (1.0f - bc->attack_skill) * 0.2f;
-
-    if (bc->attackstrafe_time > strafechange_time) {
-        if ((float)(rand() & 0x7FFF) / 0x7FFF > 0.935f) {
-            bc->flags ^= BFL_STRAFERIGHT;
-            bc->attackstrafe_time = 0;
-        }
-    }
-
-    for (i = 0; i < 2; i++) {
-        hordir[0] = forward[0];
-        hordir[1] = forward[1];
-        hordir[2] = 0;
-        VectorNormalize(hordir);
-        CrossProduct(hordir, up, sideward);
-        if (bc->flags & BFL_STRAFERIGHT)
-            VectorNegate(sideward, sideward);
-
-        /* Mix in forward/backward to maintain ideal distance */
-        if (dist > IDEAL_ATTACKDIST + 40.0f)
-            VectorAdd(sideward, forward, sideward);
-        else if (dist < IDEAL_ATTACKDIST - 40.0f)
-            VectorAdd(sideward, backward, sideward);
-
-        VectorNormalize(sideward);
-        if (BotMoveInDirection(bc->movestate, sideward, 400, movetype))
-            return;
-
-        /* Movement failed — flip strafe direction and retry */
-        bc->flags ^= BFL_STRAFERIGHT;
-        bc->attackstrafe_time = 0;
-    }
-}
-
-/* ====================================================================
- * Q2BotCheckPowerups — detect powerup pickup, boost aggression
- *
- * Compares current inventory with previous frame.  If Quad or
- * Invulnerability was just picked up, force transition to BATTLE_FIGHT.
- * Mirrors Q3's BotCheckItemPickup (ai_dmq3.c:1622).
- * ==================================================================== */
-static void Q2BotCheckPowerups(q2_botclient_t *bc)
-{
-    /* Quad Damage just picked up → go aggressive */
-    if (bc->inventory[23] > 0 && bc->prev_quad == 0) {
-        if (bc->enemy >= 0)
-            bc->aistate = Q2AI_BATTLE_FIGHT;
-    }
-    /* Invulnerability just picked up */
-    if (bc->inventory[24] > 0 && bc->prev_invuln == 0) {
-        if (bc->enemy >= 0)
-            bc->aistate = Q2AI_BATTLE_FIGHT;
-    }
-    bc->prev_quad   = bc->inventory[23];
-    bc->prev_invuln = bc->inventory[24];
-}
-
-/*
- * Q2BotFindEnemy — scan for nearest visible enemy player
- *
- * Returns entity number (1-indexed) or -1 if no enemy visible.
- * Always records enemy distance in bc->enemy_hdist/enemy_height
- * for range-aware weapon selection, even if the bot won't fight.
- *
- * Mirrors Q3's BotFindEnemy (ai_dmq3.c:2935) with:
- * - Alertness-scaled detection range (900 + alertness * 4000)
- * - FOV-limited detection: normally 90°, expands to 360° when
- *   recently damaged or enemy is shooting
- * - Spawn protection: skip enemies near recent teleport for 3s
- * - Dead player filtering (solid==0)
- */
-static int Q2BotFindEnemy(int client, q2_botclient_t *bc, vec3_t bot_eye)
-{
-    int maxcl = (int)LibVarGetValue("maxclients");
-    int best = -1;
-    float best_dist_sq = 99999999.0f;
-    aas_entityinfo_t best_info;
-    int i;
-    qboolean healthdecrease;
-    float max_range;
-
-    /* Detect health decrease since last frame (damage awareness).
-     * Mirrors Q3's healthdecrease = bs->lasthealth > bs->inventory[HEALTH]. */
-    healthdecrease = (bc->lasthealth > bc->health);
-    bc->lasthealth = bc->health;
-
-    /* Alertness-scaled detection range.
-     * Q3: squaredist > Square(900.0 + alertness * 4000.0) → skip.
-     * Range varies from 900 (alertness=0) to 4900 (alertness=1). */
-    max_range = 900.0f + bc->alertness * 4000.0f;
-
-    for (i = 1; i <= maxcl; i++) {
-        aas_entityinfo_t entinfo;
-        vec3_t enemy_center, dir;
-        bsp_trace_t los;
-        float dist_sq, fov;
-
-        if (i == client + 1) continue;
-
-        /* CTF/team: skip teammates via game DLL callback */
-        if (q2import.OnSameTeam &&
-            q2import.OnSameTeam(client + 1, i)) continue;
-
-        AAS_EntityInfo(i, &entinfo);
-        if (!entinfo.valid || entinfo.type != 1) continue;
-        /* Skip dead players (solid==0 = SOLID_NOT) */
-        if (entinfo.solid == 0) continue;
-
-        /* #12 — Spawn protection: skip enemies near a recent teleport
-         * destination for 3 seconds.  Mirrors Q3 ai_dmq3.c:2985.
-         * We use the bot's own teleport_time as a proxy — in Q2 we
-         * can't track other players' teleport events, but we can
-         * avoid targeting freshly-teleported bots. */
-        if (bc->teleport_time > AAS_Time() - 3.0f) {
-            vec3_t tdiff;
-            VectorSubtract(entinfo.origin, bc->origin, tdiff);
-            if (VectorLengthSquared(tdiff) < 70.0f * 70.0f) continue;
-        }
-
-        /* Distance check (squared for efficiency) */
-        VectorSubtract(entinfo.origin, bc->origin, dir);
-        dist_sq = VectorLengthSquared(dir);
-        if (dist_sq > max_range * max_range) continue;
-
-        /* Skip if farther than current best (find nearest) */
-        if (best >= 0 && dist_sq > best_dist_sq) continue;
-
-        /* #5 — FOV-limited detection.
-         * Q3: if health decreased or enemy is shooting → 360° FOV.
-         * Otherwise, scale FOV based on distance:
-         *   ~90° at close range, up to ~180° at 810 units.
-         * Q3 formula: f = 90 + 90 - (90 - dist²/(810*9))
-         *
-         * Close-range override: at < 150 units, force 360° FOV.
-         * At that range a player would detect an enemy by sound,
-         * footsteps, and peripheral vision.  Without this, bots
-         * facing a wall ignore enemies standing right next to them.
-         *
-         * Stuck override: when the bot is in ROAMING (bad AAS area),
-         * it should fight nearby enemies rather than keep bouncing
-         * off walls.  Force 360° awareness when stuck. */
-        if (healthdecrease || dist_sq < 150.0f * 150.0f ||
-            bc->move_fail_time > 0.0f) {
-            fov = 360.0f;
-        } else {
-            float d = dist_sq > (810.0f * 810.0f) ? (810.0f * 810.0f) : dist_sq;
-            fov = 90.0f + 90.0f - (90.0f - d / (810.0f * 9.0f));
-            if (fov > 360.0f) fov = 360.0f;
-            if (fov < 90.0f)  fov = 90.0f;
-        }
-
-        /* Check if enemy is within our field of vision */
-        {
-            vec3_t toenemy;
-            float enemy_yaw, view_yaw, diff_yaw;
-            VectorSubtract(entinfo.origin, bc->origin, toenemy);
-            enemy_yaw = atan2(toenemy[1], toenemy[0]) * 180.0f / M_PI;
-            view_yaw  = bc->viewangles[1]; /* YAW */
-            diff_yaw  = enemy_yaw - view_yaw;
-            /* Normalize to [-180, 180] */
-            while (diff_yaw > 180.0f)  diff_yaw -= 360.0f;
-            while (diff_yaw < -180.0f) diff_yaw += 360.0f;
-            if (fabs(diff_yaw) > fov * 0.5f) continue;
-        }
-
-        /* LOS trace */
-        VectorCopy(entinfo.origin, enemy_center);
-        enemy_center[2] += 22.0f;
-        los = q2import.Trace(bot_eye, NULL, NULL, enemy_center,
-                             client + 1, 1 /* CONTENTS_SOLID */);
-        if (los.fraction < 1.0f) continue;
-
-        /* This enemy is closer and visible — record as best */
-        best_dist_sq = dist_sq;
-        best = i;
-        Com_Memcpy(&best_info, &entinfo, sizeof(best_info));
-    }
-
-    if (best >= 0) {
-        vec3_t hdiff;
-        hdiff[0] = best_info.origin[0] - bc->origin[0];
-        hdiff[1] = best_info.origin[1] - bc->origin[1];
-        hdiff[2] = 0.0f;
-        bc->enemy_hdist  = (int)VectorLength(hdiff);
-        bc->enemy_height = (int)(best_info.origin[2] - bc->origin[2]);
-    } else {
-        bc->enemy_hdist  = 9999;
-        bc->enemy_height = 0;
-    }
-    return best;
-}
-
-/*
- * Q2BotAimAndFire — aim at enemy with prediction and fire with safety checks
- *
- * Combines Q3's BotAimAtEnemy (predictive aiming, skill-based accuracy)
- * and BotCheckAttack (reaction time, fire throttle, LOS check).
- *
- * Prediction tiers (mirrors Q3 ai_dmq3.c:3271):
- *   aim_skill > 0.4: linear leading (simple velocity * flight_time)
- *   aim_skill > 0.6: splash weapons aim at ground near enemy
- *   Accuracy scatter applied based on aim_accuracy characteristic.
- *
- * Fire gating (mirrors Q3 ai_dmq3.c:3565):
- *   1. Reaction time delay after first spotting enemy
- *   2. Fire throttle: random fire/pause pattern based on firethrottle trait
- *   3. LOS check: don't fire into walls
- *   4. Splash safety: don't fire RL/GL at point blank
- */
-static void Q2BotAimAndFire(int client, int enemy, vec3_t bot_eye)
-{
-    q2_botclient_t *bc = &q2clients[client];
-    aas_entityinfo_t entinfo;
-    vec3_t bestorigin, dir, aim_angles;
-    bsp_trace_t trace;
-    float dist, accuracy;
-    weaponinfo_t wi;
-
-    AAS_EntityInfo(enemy, &entinfo);
-    if (!entinfo.valid) return;
-
-    /* --- Aim prediction (mirrors Q3's BotAimAtEnemy) --- */
-    VectorCopy(entinfo.origin, bestorigin);
-    bestorigin[2] += 8.0f;
-    accuracy = bc->aim_accuracy;
-    if (accuracy <= 0.0f) accuracy = 0.0001f;
-
-    /* Cache enemy velocity every 0.5s for prediction.
-     * Q3: enemyvelocity = (origin - lastvisorigin) / update_time */
-    if (bc->enemyposition_time < AAS_Time()) {
-        vec3_t evel;
-        if (entinfo.update_time > 0.001f) {
-            VectorSubtract(entinfo.origin, entinfo.lastvisorigin, evel);
-            VectorScale(evel, 1.0f / entinfo.update_time, evel);
-        } else {
-            VectorClear(evel);
-        }
-        /* If enemy changed direction, reduce accuracy (Q3 ai_dmq3.c:3388) */
-        if (bc->aim_skill < 0.9f) {
-            if (DotProduct(bc->enemyvelocity, evel) < 0)
-                accuracy *= 0.7f;
-        }
-        VectorCopy(evel, bc->enemyvelocity);
-        VectorCopy(entinfo.origin, bc->enemyorigin);
-        bc->enemyposition_time = AAS_Time() + 0.5f;
-    }
-
-    /* Get current weapon info for projectile speed */
-    BotGetWeaponInfo(bc->weaponstate, bc->best_weapon_num, &wi);
-
-    /* Projectile leading: only for non-instant weapons (wi.speed > 0).
-     * Mirrors Q3's linear prediction for aim_skill > 0.4. */
-    if (wi.speed > 0 && bc->aim_skill > 0.4f) {
-        VectorSubtract(entinfo.origin, bc->origin, dir);
-        dist = VectorLength(dir);
-        /* Linear prediction: aim at origin + velocity * (dist / projectile_speed) */
-        {
-            vec3_t evel;
-            float flight_time = dist / wi.speed;
-            VectorSubtract(entinfo.origin, entinfo.lastvisorigin, evel);
-            evel[2] = 0; /* don't predict vertical (Q3 strips Z for linear) */
-            if (entinfo.update_time > 0.001f)
-                VectorScale(evel, 1.0f / entinfo.update_time, evel);
-            else
-                VectorClear(evel);
-            VectorMA(entinfo.origin, flight_time * VectorLength(evel),
-                     evel, bestorigin);
-            bestorigin[2] = entinfo.origin[2] + 8.0f;
-        }
-    }
-
-    /* Splash weapons: aim at ground if enemy is at same height or below.
-     * Mirrors Q3 ai_dmq3.c:3444 (aim_skill > 0.6 && radial damage). */
-    if (bc->aim_skill > 0.6f &&
-        (bc->best_weapon_num == 8 /* RL */ || bc->best_weapon_num == 7 /* GL */)) {
-        if (entinfo.origin[2] < bc->origin[2] + 16.0f) {
-            vec3_t ground_end;
-            bsp_trace_t gtrace;
-            VectorCopy(entinfo.origin, ground_end);
-            ground_end[2] -= 64.0f;
-            gtrace = q2import.Trace(entinfo.origin, NULL, NULL, ground_end,
-                                     enemy, 1);
-            if (!gtrace.startsolid) {
-                vec3_t gcheck;
-                VectorSubtract(gtrace.endpos, bot_eye, gcheck);
-                /* Only aim at ground if far enough from bot (avoid splash) */
-                if (VectorLengthSquared(gcheck) > 100.0f * 100.0f) {
-                    bestorigin[2] = gtrace.endpos[2] - 8.0f;
-                }
-            }
-        }
-    }
-
-    /* Apply accuracy scatter (Q3 ai_dmq3.c:3500) */
-    bestorigin[0] += 20.0f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-    bestorigin[1] += 20.0f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-    bestorigin[2] += 10.0f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-
-    /* Compute final aim direction and view angles */
-    VectorSubtract(bestorigin, bot_eye, dir);
-
-    /* For hitscan weapons, scale accuracy with distance (Q3 ai_dmq3.c:3509) */
-    if (wi.speed == 0) {
-        dist = VectorLength(dir);
-        if (dist > 150.0f) dist = 150.0f;
-        accuracy *= (0.6f + dist / 150.0f * 0.4f);
-    }
-
-    /* Add extra scatter for low accuracy bots (Q3 ai_dmq3.c:3515) */
-    if (accuracy < 0.8f) {
-        VectorNormalize(dir);
-        dir[0] += 0.3f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-        dir[1] += 0.3f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-        dir[2] += 0.3f * ((float)(rand() & 0x7FFF) / 0x7FFF * 2.0f - 1.0f) * (1.0f - accuracy);
-    }
-
-    Vector2Angles(dir, aim_angles);
-    EA_View(client, aim_angles);
-
-    /* --- Fire gating (mirrors Q3's BotCheckAttack) --- */
-
-    /* #2 — Reaction time: don't fire until reactiontime seconds after
-     * first spotting this enemy.  Mirrors Q3 ai_dmq3.c:3590. */
-    if (bc->enemysight_time > AAS_Time() - bc->reactiontime) return;
-    if (bc->teleport_time > AAS_Time() - bc->reactiontime) return;
-
-    /* Fire throttle: creates realistic fire-pause patterns.
-     * Mirrors Q3 ai_dmq3.c:3594-3604. */
-    if (bc->firethrottlewait_time > AAS_Time()) return;
-    if (bc->firethrottleshoot_time < AAS_Time()) {
-        if ((float)(rand() & 0x7FFF) / 0x7FFF > bc->firethrottle) {
-            bc->firethrottlewait_time = AAS_Time() + bc->firethrottle;
-            bc->firethrottleshoot_time = 0;
-        } else {
-            bc->firethrottleshoot_time = AAS_Time() + 1.0f - bc->firethrottle;
-            bc->firethrottlewait_time = 0;
-        }
-    }
-
-    /* Pre-fire LOS check and Q3-style splash damage avoidance.
-     * Mirrors Q3 ai_dmq3.c BotCheckAttack lines 3629-3667. */
-    trace = q2import.Trace(bot_eye, NULL, NULL, bestorigin,
-                           client + 1, 1 /* CONTENTS_SOLID */);
-    if (trace.fraction < 1.0f) {
-        weaponinfo_t wi;
-        BotGetWeaponInfo(bc->weaponstate, bc->best_weapon_num, &wi);
-        if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
-            /* Splash weapon hitting a wall: check if splash would hurt us.
-             * Q3 formula: self_damage = (damage - 0.5 * impact_dist) * 0.5 */
-            vec3_t diff;
-            float aim_dist, impact_dist, points;
-            VectorSubtract(bestorigin, bot_eye, diff);
-            aim_dist = VectorLength(diff);
-            impact_dist = aim_dist * trace.fraction;
-            if (impact_dist < wi.proj.radius) {
-                points = (wi.proj.damage - 0.5f * impact_dist) * 0.5f;
-                if (points > 0) {
-                    return; /* splash would hurt us, don't fire */
-                }
-            }
-            /* Splash is safe distance: fire at wall/floor near enemy */
-        } else {
-            return; /* Hitscan weapon blocked by wall */
-        }
-    }
-
-    EA_Attack(client);
-    bc->flags ^= BFL_ATTACKED;
-}
-
-/*
- * Q2BotNavigateGoals — manage goal stack, navigate toward active goal
- *
- * Returns true if the bot is actively navigating (has a goal and
- * BotMoveToGoal was called).
- */
-/* Forward declaration — defined after CTF functions */
-static qboolean Q2BotCTFSeekGoals(int client, q2_botclient_t *bc);
-
-static qboolean Q2BotNavigateGoals(int client, q2_botclient_t *bc,
-                                    vec3_t bot_eye,
-                                    bot_moveresult_t *moveresult)
-{
-    float now = AAS_Time();
-
-    /* Timeout: abandon goals that haven't been reached in 60s */
-    if (bc->hasgoal && bc->goal_set_time > 0.0f &&
-        (now - bc->goal_set_time) > 60.0f)
-    {
-        if (bc->hasnbg) { BotPopGoal(bc->goalstate); bc->hasnbg = false; }
-        BotPopGoal(bc->goalstate);
-        bc->hasgoal       = false;
-        bc->ltg_check_time = 0.0f;
-    }
-
-    /* CTF: check for CTF-specific goals before normal item seeking.
-     * If CTF goal is active, skip normal LTG selection. */
-    if (Q2BotCTFSeekGoals(client, bc)) {
-        /* CTF goal set — fall through to navigation below */
-        goto ctf_navigate;
-    }
-
-    /* LTG: pick a goal when we don't have one (throttled to 0.5s). */
-    if (!bc->hasgoal && (now - bc->ltg_check_time) >= 0.5f) {
-        bc->ltg_check_time = now;
-        /* Try goal selection with the bot's actual origin first.
-         * If that fails (spawn point in bad AAS area), retry with
-         * the origin nudged upward by 18 units (Q2 STEPSIZE).
-         * Many Q2 spawn points are a few units inside the floor
-         * geometry, putting the bot below the AAS ground plane.
-         * A small upward offset often lands in a valid area. */
-        if (!BotChooseLTGItem(bc->goalstate, bc->origin,
-                               bc->inventory, TFL_DEFAULT)) {
-            vec3_t nudged;
-            VectorCopy(bc->origin, nudged);
-            nudged[2] += 18.0f;
-            BotChooseLTGItem(bc->goalstate, nudged,
-                              bc->inventory, TFL_DEFAULT);
-        }
-        if (BotGetTopGoal(bc->goalstate, &bc->ltg)) {
-            bc->hasgoal      = true;
-            bc->goal_set_time = now;
-            if (LibVarGetValue("bot_developer")) {
-                char goalname[64];
-                BotGoalName(bc->ltg.number, goalname, sizeof(goalname));
-                botimport.Print(PRT_MESSAGE,
-                    "bot %d: LTG '%s' area %d (weapons: sg=%d ssg=%d mg=%d "
-                    "cg=%d gl=%d rl=%d hb=%d rg=%d bfg=%d)\n",
-                    client, goalname, bc->ltg.areanum,
-                    bc->inventory[8], bc->inventory[9], bc->inventory[10],
-                    bc->inventory[11], bc->inventory[13], bc->inventory[14],
-                    bc->inventory[15], bc->inventory[16], bc->inventory[17]);
-            }
-        } else if (LibVarGetValue("bot_developer")) {
-            botimport.Print(PRT_MESSAGE,
-                "bot %d: BotChooseLTGItem returned false (no goal found)\n",
-                client);
-        }
-    }
-
-    /* NBG: opportunistically divert to a nearby item.
-     * Range 150 matches Q3 ai_dmnet.c:1893 default (150ms travel time).
-     * Throttle is 0.5s normally, but nbg_check_time is reset to 0 when
-     * an LTG is reached, so the first check after pickup is immediate
-     * (matches Q3 ai_dmnet.c:1712 setting check_time = now + 0.05). */
-    if (bc->hasgoal && !bc->hasnbg && (now - bc->nbg_check_time) >= 0.5f) {
-        bot_goal_t *ltg_ptr = (bc->ltg.flags & GFL_ROAM) ? NULL : &bc->ltg;
-        bc->nbg_check_time = now;
-        if (BotChooseNBGItem(bc->goalstate, bc->origin, bc->inventory,
-                              TFL_DEFAULT, ltg_ptr, 150)) {
-            bc->hasnbg = true;
-        }
-    }
-
-ctf_navigate:
-    /* Navigate toward the current active goal (top of stack).
-     * If no goal could be found (bad AAS area at spawn point, all items
-     * unreachable, etc.), walk in a random direction.  This moves the bot
-     * out of a "dead" AAS area and into one with valid reachability links,
-     * so the next BotChooseLTGItem attempt (0.5s later) can succeed. */
-    Com_Memset(moveresult, 0, sizeof(*moveresult));
-    if (bc->hasgoal) {
-        bot_goal_t active_goal;
-        if (BotGetTopGoal(bc->goalstate, &active_goal)) {
-            /* --- Area-loop detection ---
-             * Track the bot's recent AAS areas.  If the same small set of
-             * areas keeps repeating (routing dead-end at a passageway with
-             * missing reachabilities), abandon the goal and roam to escape. */
-            {
-                int cur_area = BotReachabilityArea(bc->origin, client);
-                if (cur_area > 0) {
-                    /* Record area in ring buffer */
-                    int prev_idx = (bc->area_history_idx + 7) & 7;
-                    if (bc->area_history[prev_idx] != cur_area) {
-                        bc->area_history[bc->area_history_idx] = cur_area;
-                        bc->area_history_idx = (bc->area_history_idx + 1) & 7;
-                    }
-                    /* Check for loop: count distinct areas in the ring buffer.
-                     * If <= 3 distinct areas AND all 8 slots filled, we have
-                     * a routing loop. */
-                    {
-                        int i, j, distinct = 0;
-                        int seen[8];
-                        qboolean ring_full = true;
-                        for (i = 0; i < 8; i++) {
-                            if (bc->area_history[i] == 0) { ring_full = false; break; }
-                            for (j = 0; j < distinct; j++)
-                                if (seen[j] == bc->area_history[i]) break;
-                            if (j == distinct) seen[distinct++] = bc->area_history[i];
-                        }
-                        if (ring_full && distinct <= 3) {
-                            if (bc->area_loop_time == 0.0f)
-                                bc->area_loop_time = now;
-                            /* After 3 seconds of looping, abandon goal and roam */
-                            if ((now - bc->area_loop_time) > 3.0f) {
-                                if (LibVarGetValue("bot_developer")) {
-                                    botimport.Print(PRT_MESSAGE,
-                                        "NAV_DIAG client %d: AREA LOOP detected "
-                                        "(areas %d/%d/%d), forcing roam\n",
-                                        client, seen[0],
-                                        distinct > 1 ? seen[1] : 0,
-                                        distinct > 2 ? seen[2] : 0);
-                                }
-                                BotSetAvoidGoalTime(bc->goalstate,
-                                                     active_goal.number, 30.0f);
-                                BotPopGoal(bc->goalstate);
-                                if (bc->hasnbg) bc->hasnbg = false;
-                                else { bc->hasgoal = false; bc->ltg_check_time = 0.0f; }
-                                bc->nbg_check_time = 0.0f;
-                                Com_Memset(bc->area_history, 0, sizeof(bc->area_history));
-                                bc->area_loop_time = 0.0f;
-                                goto roam_fallback;
-                            }
-                        } else {
-                            bc->area_loop_time = 0.0f;  /* not looping, reset */
-                        }
-                    }
-                }
-            }
-
-            BotMoveToGoal(moveresult, bc->movestate, &active_goal, TFL_DEFAULT);
-
-            /* Q3 ai_dmnet.c:1917 — check explicit failure flag.
-             * When routing fails, reset avoid-reach cache (flushes stale
-             * route data) and clear goal to pick a new one next frame.
-             * This matches Q3 which does NOT roam on routing failure. */
-            if (moveresult->failure) {
-                BotResetAvoidReach(bc->movestate);
-                goto roam_fallback;
-            }
-
-            /* Sustained zero-movedir detection for silent failures.
-             * BotMoveToGoal may produce no movement without setting the
-             * failure flag (e.g., bad AAS area, brief routing gaps).
-             * Wait 1 second before treating as a real failure. */
-            if (!(moveresult->flags & MOVERESULT_WAITING) &&
-                moveresult->movedir[0] == 0.0f &&
-                moveresult->movedir[1] == 0.0f &&
-                moveresult->movedir[2] == 0.0f)
-            {
-                float now2 = AAS_Time();
-                if (bc->move_fail_time == 0.0f)
-                    bc->move_fail_time = now2;
-                if ((now2 - bc->move_fail_time) > 1.0f) {
-                    BotResetAvoidReach(bc->movestate);
-                    goto roam_fallback;
-                }
-            } else {
-                bc->move_fail_time = 0.0f;  /* movement succeeded, reset */
-            }
-
-            /* #14 — Weapon jump gating: only allow rocket jump if
-             * conditions are met.  Mirrors Q3's BotCanAndWantsToRocketJump
-             * (ai_dmq3.c:2385): RL + 3 rockets, health>=60,
-             * no Quad, weaponjumping>=0.5. */
-            if (moveresult->flags & MOVERESULT_MOVEMENTWEAPON) {
-                qboolean allow_jump = true;
-                /* Check if this is a rocket jump (weapon 8 = RL in weapons.c) */
-                if (moveresult->weapon == 8) {
-                    if (bc->inventory[14] <= 0)      allow_jump = false; /* no RL */
-                    if (bc->inventory[21] < 3)        allow_jump = false; /* low rockets */
-                    if (bc->inventory[23] > 0)        allow_jump = false; /* has Quad */
-                    if (bc->health < 60)              allow_jump = false;
-                    if (bc->health < 90 && bc->armor < 40)
-                                                      allow_jump = false;
-                    if (bc->weaponjumping < 0.5f)     allow_jump = false;
-                }
-                if (allow_jump) {
-                    weaponinfo_t jump_wi;
-                    BotGetWeaponInfo(bc->weaponstate, moveresult->weapon, &jump_wi);
-                    if (jump_wi.name[0]) {
-                        q2import.BotClientCommand(client, "use", jump_wi.name, NULL);
-                        bc->best_weapon_num = moveresult->weapon;
-                    }
-                }
-            }
-
-            /* Detect item gone */
-            if (BotItemGoalInVisButNotVisible(client, bot_eye,
-                                               bc->viewangles, &active_goal)) {
-                BotSetAvoidGoalTime(bc->goalstate, active_goal.number, 30.0f);
-                BotPopGoal(bc->goalstate);
-                if (bc->hasnbg) {
-                    bc->hasnbg = false;
-                } else {
-                    bc->hasgoal       = false;
-                    bc->ltg_check_time = 0.0f;
-                }
-                /* Force immediate NBG check so nearby items (ammo)
-                 * are picked up right away (Q3 ai_dmnet.c:1712). */
-                bc->nbg_check_time = 0.0f;
-            }
-            /* Goal reached — pop and avoid for 10s to prevent
-             * oscillation when the Q2 engine doesn't actually
-             * consume the item (pickup mechanic mismatch). */
-            else if (BotTouchingGoal(bc->origin, &active_goal)) {
-                /* Avoid for the item's respawn time (-1 = auto-lookup).
-                 * Q3 uses respawntime from item config (typically 30s).
-                 * The old hardcoded 10s was too short, causing bots to
-                 * oscillate between a few nearby items. */
-                BotSetAvoidGoalTime(bc->goalstate, active_goal.number, -1.0f);
-                BotPopGoal(bc->goalstate);
-                if (bc->hasnbg) {
-                    bc->hasnbg = false;
-                } else {
-                    bc->hasgoal       = false;
-                    bc->ltg_check_time = 0.0f;
-                }
-                /* Immediately look for nearby items (ammo next to the
-                 * weapon we just picked up).  Pass NULL as ltg so the
-                 * route check is skipped — we don't have a new LTG yet,
-                 * and any nearby item is worth grabbing regardless of
-                 * direction.  Q3 achieves this by delaying LTG re-selection
-                 * for 20 seconds (ai_dmnet.c:308), letting NBG run without
-                 * route constraints.  We do it explicitly here instead. */
-                if (!bc->hasnbg &&
-                    BotChooseNBGItem(bc->goalstate, bc->origin,
-                                      bc->inventory, TFL_DEFAULT,
-                                      NULL, 200)) {
-                    bc->hasnbg = true;
-                    bc->hasgoal = true; /* NBG needs an active goal context */
-                }
-                bc->nbg_check_time = 0.0f;
-            }
-            return true;
-        }
-    }
-
-roam_fallback:
-    /* Drop stale unreachable goal — otherwise the bot roams forever
-     * with hasgoal=1 but can never route to the goal.  Clearing it
-     * lets BotChooseLTGItem pick a different (reachable) goal next frame. */
-    if (bc->hasgoal) {
-        if (bc->hasnbg) { BotPopGoal(bc->goalstate); bc->hasnbg = false; }
-        BotPopGoal(bc->goalstate);
-        bc->hasgoal = false;
-        bc->ltg_check_time = 0.0f;
-        bc->nbg_check_time = 0.0f;
-    }
-    /* No goal found OR BotMoveToGoal failed (RESULTTYPE_INSOLIDAREA) —
-     * area (common in Q2 maps where spawn positions are slightly inside
-     * geometry).  Walk in a persistent random direction to escape the
-     * dead zone.  The direction is held for 2 seconds so the bot makes
-     * actual progress (a new random dir every frame just jitters in
-     * place with zero net displacement).  Mirrors Q3's BotRoamGoal
-     * which picks a random target and sticks with it. */
-    {
-        float now = AAS_Time();
-        if (now - bc->roam_dir_time > 2.0f) {
-            float yaw = (float)(rand() % 360);
-            bc->roam_dir[0] = cos(DEG2RAD(yaw));
-            bc->roam_dir[1] = sin(DEG2RAD(yaw));
-            bc->roam_dir[2] = 0;
-            bc->roam_dir_time = now;
-        }
-        EA_Move(client, bc->roam_dir, 400);
-        EA_Action(client, ACTION_MOVEFORWARD);
-        if (LibVarGetValue("bot_developer")) {
-            static float last_roam_log = 0;
-            if (now - last_roam_log > 1.0f) {
-                botimport.Print(PRT_MESSAGE,
-                    "bot %d: ROAMING (bad AAS area) dir=(%.1f,%.1f) area=%d origin=(%.0f,%.0f,%.0f)\n",
-                    client, bc->roam_dir[0], bc->roam_dir[1],
-                    BotReachabilityArea(bc->origin, client),
-                    bc->origin[0], bc->origin[1], bc->origin[2]);
-                last_roam_log = now;
-            }
-        }
-    }
-    return false;
-}
-
-/*
- * Q2BotAI  —  per-bot, per-frame AI entry point
- *
- * State-machine AI modelled after Q3's AINode system (ai_dmnet.c) and
- * the original Gladiator bot's internal state machine:
- *
- *   SEEK_LTG / SEEK_NBG:  Navigate toward item goals.  No combat.
- *     → enemy found + aggression >= 50 → BATTLE_FIGHT
- *     → enemy found + aggression <  50 → BATTLE_RETREAT
- *
- *   BATTLE_FIGHT:  Dedicated combat.  Pause navigation, aim + fire.
- *     → enemy lost                     → SEEK_LTG
- *     → aggression drops < 50          → BATTLE_RETREAT
- *
- *   BATTLE_RETREAT:  Navigate toward goals while defending.
- *     → enemy lost                     → SEEK_LTG
- *     → aggression rises >= 50         → BATTLE_FIGHT
- */
-/* ====================================================================
- * CTF bot goal logic
- * Mirrors Q3's BotCTFSeekGoals (ai_dmq3.c:496-766).
- * ==================================================================== */
-
-/*
- * Q2BotCTFInitFlags — find flag spawn locations from AAS item data.
- * Called once per map load.  Uses BotGetLevelItemGoal to search for
- * items named "Red Flag" / "Blue Flag" (defined in botfiles/items.c).
- */
-static void Q2BotCTFInitFlags(void)
-{
-    if (ctf_flags_initialized) return;
-    ctf_flags_initialized = true;
-
-    Com_Memset(&ctf_redflag, 0, sizeof(ctf_redflag));
-    Com_Memset(&ctf_blueflag, 0, sizeof(ctf_blueflag));
-
-    BotGetLevelItemGoal(-1, "Red Flag", &ctf_redflag);
-    BotGetLevelItemGoal(-1, "Blue Flag", &ctf_blueflag);
-
-    if (ctf_redflag.areanum)
-        botimport.Print(PRT_MESSAGE, "CTF: Red flag at area %d\n",
-                        ctf_redflag.areanum);
-    if (ctf_blueflag.areanum)
-        botimport.Print(PRT_MESSAGE, "CTF: Blue flag at area %d\n",
-                        ctf_blueflag.areanum);
-}
-
-/*
- * Q2BotCTFCarryingFlag — check if bot is carrying the enemy flag.
- * Q2 sets EF_FLAG1/EF_FLAG2 on flag carriers.
- */
-static qboolean Q2BotCTFCarryingFlag(q2_botclient_t *bc)
-{
-    return bc->ctf_has_flag;
-}
-
-/*
- * Q2BotCTFGetOwnFlag — return the flag goal for the bot's own team.
- * This is where the bot captures by touching while carrying enemy flag.
- */
-static bot_goal_t *Q2BotCTFGetOwnFlag(int client)
-{
-    /* entity_team is gone; use the OnSameTeam callback.
-     * Red team (CTF_TEAM1=1) defends ctf_redflag.
-     * We determine team by checking which flag goal the bot is "on same team" with.
-     * Simpler: track team from the last UpdateEntity call. */
-    /* Use a simpler heuristic: check which flag is closer to the bot's
-     * spawn position.  Actually, just store team in bc. */
-    /* For now, use the import callback: if bot is on same team as entity
-     * at red flag area, bot is red.  But flags aren't entities in the
-     * normal sense... Just use proximity to each flag at setup time. */
-    q2_botclient_t *bc = &q2clients[client];
-
-    /* Determine team: check OnSameTeam with the first other player on
-     * each team.  Actually the cleanest: the game DLL already tracks
-     * ctf_team via OnSameTeam.  But we need to know our OWN team here.
-     * Store it from effects: if we carried red flag at some point, we're blue.
-     * Or just check which flag the bot is NOT trying to get. */
-
-    /* Simple approach: check bot's effects (stored in entity update).
-     * If bot carries red flag (EF_FLAG1) → bot is on BLUE team → own flag is blue.
-     * If bot carries blue flag (EF_FLAG2) → bot is on RED team → own flag is red.
-     * When not carrying, use saved team from last carrier detection. */
-    if (bc->effects & Q2_EF_FLAG1_CARRIER) return &ctf_blueflag; /* blue carries red → blue's own is blue */
-    if (bc->effects & Q2_EF_FLAG2_CARRIER) return &ctf_redflag;  /* red carries blue → red's own is red */
-
-    /* Not carrying: use proximity — bot's own flag is whichever is closer.
-     * In standard CTF layouts, bots spawn near their own flag. */
-    {
-        vec3_t d1, d2;
-        VectorSubtract(bc->origin, ctf_redflag.origin, d1);
-        VectorSubtract(bc->origin, ctf_blueflag.origin, d2);
-        if (VectorLengthSquared(d1) < VectorLengthSquared(d2))
-            return &ctf_redflag;
-        else
-            return &ctf_blueflag;
-    }
-}
-
-/*
- * Q2BotCTFGetEnemyFlag — return the flag goal for the enemy team.
- */
-static bot_goal_t *Q2BotCTFGetEnemyFlag(int client)
-{
-    q2_botclient_t *bc = &q2clients[client];
-    if (bc->effects & Q2_EF_FLAG1_CARRIER) return &ctf_redflag;  /* carrying red → red is enemy's */
-    if (bc->effects & Q2_EF_FLAG2_CARRIER) return &ctf_blueflag;
-    return NULL;
-}
-
-/*
- * Q2BotCTFSeekGoals — CTF-specific goal selection.
- * Called from Q2BotAI before normal LTG selection when CTF is active.
- * Returns true if a CTF goal was set (caller should skip normal LTG).
- *
- * Mirrors Q3's BotCTFSeekGoals (ai_dmq3.c:496-766).
- */
-static qboolean Q2BotCTFSeekGoals(int client, q2_botclient_t *bc)
-{
-    float now = AAS_Time();
-
-    if (!LibVarGetValue("ctf")) return false;
-
-    Q2BotCTFInitFlags();
-    if (!ctf_redflag.areanum || !ctf_blueflag.areanum) return false;
-
-    /* Detect flag carrying from entity effects.
-     * The game DLL sets EF_FLAG1/EF_FLAG2 on the player entity. */
-    bc->ctf_has_flag = (bc->effects & (Q2_EF_FLAG1_CARRIER | Q2_EF_FLAG2_CARRIER)) ? true : false;
-
-    /* --- Priority 1: Carrying enemy flag → RUSH TO OWN BASE --- */
-    if (bc->ctf_has_flag) {
-        if (bc->ctf_ltgtype != Q2_LTG_RUSHBASE) {
-            bc->ctf_ltgtype = Q2_LTG_RUSHBASE;
-            bc->ctf_goal_time = now + CTF_RUSHBASE_TIME;
-
-            /* Own base = own flag location.
-             * Determine team from which flag we're carrying:
-             * carrying EF_FLAG1 (red flag) → we're blue team → rush to blue flag
-             * carrying EF_FLAG2 (blue flag) → we're red team → rush to red flag */
-            if (bc->effects & Q2_EF_FLAG1_CARRIER)
-                Com_Memcpy(&bc->ctf_goal, &ctf_blueflag, sizeof(bot_goal_t));
-            else
-                Com_Memcpy(&bc->ctf_goal, &ctf_redflag, sizeof(bot_goal_t));
-        }
-
-        /* Push CTF goal onto goal stack for navigation */
-        if (!bc->hasgoal) {
-            BotPushGoal(bc->goalstate, &bc->ctf_goal);
-            bc->hasgoal = true;
-        }
-        return true;
-    }
-
-    /* No longer carrying flag — clear rush goal */
-    if (bc->ctf_ltgtype == Q2_LTG_RUSHBASE) {
-        bc->ctf_ltgtype = Q2_LTG_NONE;
-        if (bc->hasgoal) {
-            BotPopGoal(bc->goalstate);
-            bc->hasgoal = false;
-        }
-    }
-
-    /* --- Decision throttle: re-evaluate CTF role every 5 seconds --- */
-    if (bc->ctf_ltgtype != Q2_LTG_NONE &&
-        bc->ctf_goal_time > now &&
-        bc->ctf_decide_time > now)
-        return (bc->ctf_ltgtype != Q2_LTG_NONE);
-
-    bc->ctf_decide_time = now + 5.0f;
-
-    /* --- CTF roam cooldown: if recently chose to roam, don't override --- */
-    if (bc->ctf_roam_time > now) return false;
-
-    /* --- Goal timed out? Clear it --- */
-    if (bc->ctf_ltgtype != Q2_LTG_NONE && bc->ctf_goal_time < now) {
-        bc->ctf_ltgtype = Q2_LTG_NONE;
-        if (bc->hasgoal) {
-            BotPopGoal(bc->goalstate);
-            bc->hasgoal = false;
-        }
-    }
-
-    /* --- Already have an active CTF goal? Keep it --- */
-    if (bc->ctf_ltgtype != Q2_LTG_NONE) return true;
-
-    /* --- Priority 2: Decide attack vs defend (Q3 ai_dmq3.c:738-765) ---
-     * ~40% chance attack (get enemy flag)
-     * ~30% chance defend (patrol own flag base)
-     * ~30% chance roam (normal item-seeking FFA behavior) */
-    {
-        float rnd = (float)(rand() & 0x7FFF) / 0x7FFF;
-
-        if (rnd < 0.4f) {
-            /* ATTACK: go get the enemy flag */
-            bc->ctf_ltgtype = Q2_LTG_GETFLAG;
-            bc->ctf_goal_time = now + CTF_GETFLAG_TIME;
-
-            /* Determine own team to find enemy flag:
-             * Use OnSameTeam with a known entity at each flag.
-             * Simpler: bot closer to red flag → red team → enemy is blue.
-             * This is a heuristic that works for standard CTF layouts. */
-            {
-                vec3_t dr, db;
-                float dist_red, dist_blue;
-                VectorSubtract(bc->origin, ctf_redflag.origin, dr);
-                VectorSubtract(bc->origin, ctf_blueflag.origin, db);
-                dist_red = VectorLengthSquared(dr);
-                dist_blue = VectorLengthSquared(db);
-                /* Bot is closer to OWN flag typically (starts at own base) */
-                if (dist_red < dist_blue)
-                    Com_Memcpy(&bc->ctf_goal, &ctf_blueflag, sizeof(bot_goal_t)); /* red team → get blue flag */
-                else
-                    Com_Memcpy(&bc->ctf_goal, &ctf_redflag, sizeof(bot_goal_t));  /* blue team → get red flag */
-            }
-
-            if (!bc->hasgoal) {
-                BotPushGoal(bc->goalstate, &bc->ctf_goal);
-                bc->hasgoal = true;
-            }
-        }
-        else if (rnd < 0.7f) {
-            /* DEFEND: patrol own flag base */
-            bc->ctf_ltgtype = Q2_LTG_DEFENDBASE;
-            bc->ctf_goal_time = now + CTF_DEFENDBASE_TIME;
-
-            /* Own flag: same proximity heuristic */
-            {
-                vec3_t dr, db;
-                float dist_red, dist_blue;
-                VectorSubtract(bc->origin, ctf_redflag.origin, dr);
-                VectorSubtract(bc->origin, ctf_blueflag.origin, db);
-                dist_red = VectorLengthSquared(dr);
-                dist_blue = VectorLengthSquared(db);
-                if (dist_red < dist_blue)
-                    Com_Memcpy(&bc->ctf_goal, &ctf_redflag, sizeof(bot_goal_t));
-                else
-                    Com_Memcpy(&bc->ctf_goal, &ctf_blueflag, sizeof(bot_goal_t));
-            }
-
-            if (!bc->hasgoal) {
-                BotPushGoal(bc->goalstate, &bc->ctf_goal);
-                bc->hasgoal = true;
-            }
-        }
-        else {
-            /* ROAM: normal item-seeking behavior for a while */
-            bc->ctf_ltgtype = Q2_LTG_NONE;
-            bc->ctf_roam_time = now + CTF_ROAM_TIME;
-            return false; /* let normal LTG selection handle it */
-        }
-    }
-
-    return true;
-}
-
 static int Q2BotAI(int client, float thinktime)
 {
-    q2_botclient_t   *bc;
-    bot_initmove_t    initmove;
-    bot_moveresult_t  moveresult;
-    bot_input_t       q3input;
-    q2_bot_input_t    q2input;
-    qboolean          in_combat = false;
+    bot_state_t   *bs;
+    bot_input_t    q3input;
+    q2_bot_input_t q2input;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
-    bc = &q2clients[client];
-    if (!bc->inuse) return Q2_BLERR_AICLIENTNOTSETUP;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return Q2_BLERR_AICLIENTNOTSETUP;
 
-    /* --- Dead bot: press attack to respawn --- */
-    if (bc->pm_type == Q2PM_DEAD || bc->pm_type == Q2PM_GIB) {
-        q2_bot_input_t respawn;
-        Com_Memset(&respawn, 0, sizeof(respawn));
-        respawn.thinktime   = thinktime;
-        respawn.actionflags = Q2_ACTION_RESPAWN;
-        /* Botlib state reset on death — clear stale navigation and
-         * goals but preserve critical persistent fields.
-         *
-         * BotEmptyGoalStack: clears the goal stack (all entries).
-         * BotResetAvoidGoals: clears item avoidance timers.
-         * BotResetMoveState: zeroes the move state — clears stale
-         *   reachability chains and cached areas that accumulate
-         *   across deaths and prevent navigation.
-         *
-         * We do NOT use BotResetGoalState here because it zeroes
-         * gs->lastreachabilityarea.  BotChooseLTGItem uses that as
-         * a fallback when the bot's spawn point doesn't map to a
-         * valid AAS area (common in Q2 maps where spawn points are
-         * slightly inside geometry).  Without the fallback, the bot
-         * can't compute travel times → no goals → stuck at spawn. */
-        BotEmptyGoalStack(bc->goalstate);
-        BotResetAvoidGoals(bc->goalstate);
-        BotResetMoveState(bc->movestate);
-        bc->hasgoal         = false;
-        bc->hasnbg          = false;
-        bc->ltg_check_time  = 0.0f;
-        bc->nbg_check_time  = 0.0f;
-        bc->goal_set_time   = 0.0f;
-        bc->best_weapon_num = 0;
-        bc->aistate         = Q2AI_SEEK_LTG;
-        bc->enemy           = -1;
-        bc->enemy_hdist     = 9999;
-        bc->enemy_height    = 0;
-        bc->chase_time      = 0;
-        bc->lastenemyareanum= 0;
-        bc->notblocked_time = -1.0f;
-        q2import.BotInput(client, &respawn);
-        EA_ResetInput(client);
-        return Q2_BLERR_NOERROR;
-    }
+    /* Hazard awareness with no Q2-native equivalent in the real Q3
+     * source -- see the function comment above. Must run before BotAI()
+     * so this frame's BotMoveToGoal sees fresh avoid spots. */
+    Q2BotCheckGrenades(bs);
 
-    /* --- Initialise move state --- */
-    Com_Memset(&initmove, 0, sizeof(initmove));
-    VectorCopy(bc->origin,     initmove.origin);
-    VectorCopy(bc->velocity,   initmove.velocity);
-    VectorCopy(bc->viewoffset, initmove.viewoffset);
-    VectorCopy(bc->viewangles, initmove.viewangles);
-    initmove.entitynum    = client + 1;
-    initmove.client       = client;
-    initmove.thinktime    = thinktime;
-    initmove.presencetype = (bc->pm_flags & 1) ? PRESENCE_CROUCH : PRESENCE_NORMAL;
-    if (bc->pm_flags & 4) initmove.or_moveflags |= MFL_ONGROUND;
-    /* Swimming detection: Q2 has no PMF_SWIMMING flag.  Check PointContents
-     * instead.  Without MFL_SWIMMING, BotTravel_Swim and water-based
-     * reachabilities won't execute — the bot won't dive for the railgun
-     * in q2dm1 or navigate through any water tunnel.
-     * Q2: CONTENTS_WATER = 8, CONTENTS_SLIME = 16, CONTENTS_LAVA = 32 */
-    {
-        int contents = q2import.PointContents(bc->origin);
-        if (contents & (8 | 16 | 32))
-            initmove.or_moveflags |= MFL_SWIMMING;
-    }
-    /* Teleport detection (mirrors Q3's BotSetTeleportTime, ai_dmq3.c:2060) */
-    if (bc->pm_flags & 32 /* PMF_TIME_TELEPORT */) {
-        initmove.or_moveflags |= MFL_TELEPORTED;
-        bc->enemy         = -1;
-        bc->chase_time    = 0;
-        bc->teleport_time = AAS_Time(); /* #12: spawn protection timer */
-        bc->aistate       = Q2AI_SEEK_LTG;
-    }
-    /* Waterjump detection */
-    if (bc->pm_flags & 8 /* PMF_TIME_WATERJUMP */)
-        initmove.or_moveflags |= MFL_WATERJUMP;
-    BotInitMoveState(bc->movestate, &initmove);
+    /* Phase 2 (Problem 1 fix): copy this frame's CTF flag-status snapshot
+     * (computed once for every bot in Q2AI_UpdateCTFFlagStatus(), called
+     * from Q2BotStartFrame) onto this bot. Real Q3 feeds these per-bot
+     * from a configstring parse; Q2 has none, so every bot just reads the
+     * same per-frame snapshot instead. */
+    bs->redflagstatus  = q2_redflagstatus;
+    bs->blueflagstatus = q2_blueflagstatus;
 
-    /* --- Hazard awareness (before any navigation/combat) --- */
-    Q2BotCheckGrenades(bc);
-    Q2BotCheckAir(bc);
-    Q2BotCheckPowerups(bc);
+    /* The real Q3 AI: state machine, combat, weapon choice, goal
+     * selection, chat -- see game_q3/ai_main.c/ai_dmnet.c/ai_dmq3.c/
+     * ai_team.c/ai_chat.c. */
+    BotAI(client, thinktime);
 
-    /* --- Weapon selection --- */
-    bc->inventory[200] = bc->enemy_hdist;
-    bc->inventory[201] = bc->enemy_height;
-    {
-        int best = BotChooseBestFightWeapon(bc->weaponstate, bc->inventory);
-        if (best > 0 && best != bc->best_weapon_num) {
-            weaponinfo_t wi;
-            BotGetWeaponInfo(bc->weaponstate, best, &wi);
-            if (wi.name[0])
-                q2import.BotClientCommand(client, "use", wi.name, NULL);
-            bc->best_weapon_num = best;
-        }
-    }
+    /* Real Q3 calls this as a genuinely separate step after BotAI() (see
+     * ai_main.c's own BotUpdateInput and its call site in real Q3's bot
+     * scheduling code) -- it's what actually turns bs->ideal_viewangles
+     * (set moments ago inside BotAI()'s call to BotDeathmatchAI, e.g. via
+     * BotAimAtEnemy or movement-facing logic) into a smoothed
+     * bs->viewangles and submits it via trap_EA_View. Restored here after
+     * being found dead code (unreferenced anywhere) -- BotUpdateInput had
+     * been deleted during the original port as a duplicate of this same
+     * function's own EA-input-collection tail below, which is true, but
+     * that assessment missed that BotUpdateInput also carried this call,
+     * which nothing else replaced. Without it bs->viewangles never
+     * changes: bots navigate and occasionally attack whatever already
+     * happens to be in their frozen forward cone, but never actually turn
+     * to track a target or face their own movement. */
+    BotUpdateInput(bs, thinktime);
 
-    /* --- Enemy scan + state transitions + per-state behavior --- */
-    {
-        vec3_t bot_eye;
-        int    vis_enemy;
-        int    aggression;
-        float  now = AAS_Time();
-
-        VectorAdd(bc->origin, bc->viewoffset, bot_eye);
-        vis_enemy  = Q2BotFindEnemy(client, bc, bot_eye);
-        aggression = Q2BotAggression(bc);
-
-        /* --- Dead enemy detection (mirrors Q3's EntityIsDead) ---
-         * If our current enemy has died (solid==0 in AAS), immediately
-         * clear it and return to seeking.  Q3 uses a 1-second grace
-         * period for chat; we skip that since Q2 bots don't chat. */
-        if (bc->enemy >= 0) {
-            aas_entityinfo_t einfo;
-            AAS_EntityInfo(bc->enemy, &einfo);
-            if (!einfo.valid || einfo.solid == 0) {
-                bc->enemy      = -1;
-                bc->chase_time = 0;
-                bc->aistate    = Q2AI_SEEK_LTG;
-            }
-        }
-
-        /* --- State transitions --- */
-        switch (bc->aistate) {
-        case Q2AI_SEEK_LTG:
-        case Q2AI_SEEK_NBG:
-            if (vis_enemy >= 0) {
-                int areanum;
-                aas_entityinfo_t einfo;
-                AAS_EntityInfo(vis_enemy, &einfo);
-                areanum = AAS_PointAreaNum(einfo.origin);
-                if (areanum > 0) {
-                    VectorCopy(einfo.origin, bc->lastenemyorigin);
-                    bc->lastenemyareanum = areanum;
-                }
-                bc->enemy          = vis_enemy;
-                bc->enemy_time     = now;
-                bc->enemysight_time = now; /* #2: reaction timer starts */
-                bc->enemyposition_time = 0; /* force velocity cache update */
-                if (aggression >= 50) {
-                    /* Q3 empties goal stack when entering aggressive fight
-                     * (ai_dmnet.c AINode_Seek_LTG line 1858). */
-                    BotEmptyGoalStack(bc->goalstate);
-                    bc->hasgoal = false;
-                    bc->hasnbg  = false;
-                    bc->aistate = Q2AI_BATTLE_FIGHT;
-                } else {
-                    /* Q3 preserves goals when retreating. */
-                    bc->aistate = Q2AI_BATTLE_RETREAT;
-                }
-            }
-            break;
-
-        case Q2AI_BATTLE_FIGHT:
-            if (vis_enemy >= 0) {
-                /* Enemy visible: update last-known position for chase.
-                 * Mirrors Q3 ai_dmnet.c:2068 — only update if in a
-                 * valid reachable AAS area. */
-                int areanum;
-                aas_entityinfo_t einfo;
-                AAS_EntityInfo(vis_enemy, &einfo);
-                areanum = AAS_PointAreaNum(einfo.origin);
-                if (areanum > 0) {
-                    VectorCopy(einfo.origin, bc->lastenemyorigin);
-                    bc->lastenemyareanum = areanum;
-                }
-                bc->enemy      = vis_enemy;
-                bc->enemy_time = now;
-                if (aggression < 50)
-                    bc->aistate = Q2AI_BATTLE_RETREAT;
-            } else {
-                /* LOS lost — chase or give up based on aggression.
-                 * Mirrors Q3's BotWantsToChase (ai_dmq3.c:2322):
-                 * only chase if aggression > 50 (well-armed bot). */
-                if (aggression > 50 && bc->lastenemyareanum > 0) {
-                    bc->aistate    = Q2AI_BATTLE_CHASE;
-                    bc->chase_time = now;
-                } else {
-                    bc->aistate = Q2AI_SEEK_LTG;
-                    bc->enemy   = -1;
-                }
-            }
-            break;
-
-        case Q2AI_BATTLE_RETREAT:
-            if (vis_enemy >= 0) {
-                int areanum;
-                aas_entityinfo_t einfo;
-                AAS_EntityInfo(vis_enemy, &einfo);
-                areanum = AAS_PointAreaNum(einfo.origin);
-                if (areanum > 0) {
-                    VectorCopy(einfo.origin, bc->lastenemyorigin);
-                    bc->lastenemyareanum = areanum;
-                }
-                bc->enemy      = vis_enemy;
-                bc->enemy_time = now;
-                /* If picked up enough items to fight, switch.
-                 * Mirrors Q3's BotWantsToChase check in AINode_Battle_Retreat. */
-                if (aggression >= 50)
-                    bc->aistate = Q2AI_BATTLE_FIGHT;
-            } else if ((now - bc->enemy_time) > 4.0f) {
-                /* Q3 uses 4 seconds visibility loss in retreat (not 2).
-                 * ai_dmnet.c:2410: enemyvisible_time < FloatTime() - 4 */
-                bc->aistate = Q2AI_SEEK_LTG;
-                bc->enemy   = -1;
-            }
-            break;
-
-        case Q2AI_BATTLE_NBG:
-            /* Picking up a nearby item during combat.
-             * Mirrors Q3's AINode_Battle_NBG (ai_dmnet.c:2491).
-             * When the NBG is reached/timed out, return to retreat or fight. */
-            if (vis_enemy >= 0) {
-                bc->enemy      = vis_enemy;
-                bc->enemy_time = now;
-            }
-            if (bc->nbg_combat_time < now) {
-                /* Time's up — pop NBG and return to combat */
-                if (bc->hasnbg) {
-                    BotPopGoal(bc->goalstate);
-                    bc->hasnbg = false;
-                }
-                bc->aistate = (aggression >= 50)
-                              ? Q2AI_BATTLE_FIGHT : Q2AI_BATTLE_RETREAT;
-            }
-            break;
-
-        case Q2AI_BATTLE_CHASE:
-            /* Pursuing enemy's last known position.
-             * Mirrors Q3's AINode_Battle_Chase (ai_dmnet.c:2163). */
-            if (vis_enemy >= 0) {
-                /* Re-acquired LOS — back to fight */
-                bc->enemy      = vis_enemy;
-                bc->enemy_time = now;
-                bc->chase_time = 0;
-                bc->aistate    = (aggression >= 50)
-                                 ? Q2AI_BATTLE_FIGHT : Q2AI_BATTLE_RETREAT;
-            } else if ((now - bc->chase_time) > 10.0f) {
-                /* Chase timeout (Q3 uses 10 seconds) */
-                bc->aistate    = Q2AI_SEEK_LTG;
-                bc->enemy      = -1;
-                bc->chase_time = 0;
-            } else if (aggression < 50) {
-                /* Took damage during chase, no longer well-armed enough.
-                 * Mirrors Q3's BotWantsToRetreat check at the end of
-                 * AINode_Battle_Chase (ai_dmnet.c:2280). */
-                bc->aistate    = Q2AI_BATTLE_RETREAT;
-                bc->chase_time = 0;
-            }
-            break;
-        }
-
-        /* --- Per-state behavior --- */
-        Com_Memset(&moveresult, 0, sizeof(moveresult));
-
-        switch (bc->aistate) {
-        case Q2AI_SEEK_LTG:
-        case Q2AI_SEEK_NBG:
-            /* Pure navigation — no combat.
-             * #13 — Camping: well-armed bots occasionally camp near spots.
-             * Mirrors Q3's BotWantsToCamp (ai_dmq3.c:2489). */
-            if (bc->aistate == Q2AI_SEEK_LTG && bc->camper > 0.1f &&
-                aggression >= 50 &&
-                bc->camp_time < AAS_Time() - (60.0f + 300.0f * (1.0f - bc->camper)))
-            {
-                /* Q3 requires RL+10 or RG+10 or BFG+10 to camp */
-                if ((bc->inventory[14] > 0 && bc->inventory[21] >= 10) ||
-                    (bc->inventory[16] > 0 && bc->inventory[22] >= 10) ||
-                    (bc->inventory[17] > 0 && bc->inventory[20] >= 10))
-                {
-                    /* Random check: higher camper trait = more likely */
-                    if ((float)(rand() & 0x7FFF) / 0x7FFF < bc->camper) {
-                        bot_goal_t campgoal;
-                        int cs;
-                        bot_goal_t bestcampgoal;
-                        qboolean found = false;
-                        for (cs = BotGetNextCampSpotGoal(0, &campgoal); cs;
-                             cs = BotGetNextCampSpotGoal(cs, &campgoal)) {
-                            int tt = BotReachabilityArea(bc->origin, client);
-                            (void)tt;
-                            /* Just use the first camp spot found for simplicity */
-                            Com_Memcpy(&bestcampgoal, &campgoal, sizeof(campgoal));
-                            found = true;
-                            break;
-                        }
-                        if (found) {
-                            BotPushGoal(bc->goalstate, &bestcampgoal);
-                            bc->hasgoal = true;
-                            bc->camp_time = AAS_Time();
-                        }
-                    } else {
-                        bc->camp_time = AAS_Time(); /* cooldown even on skip */
-                    }
-                }
-            }
-            Q2BotNavigateGoals(client, bc, bot_eye, &moveresult);
-            Q2BotCheckBlocked(client, bc, &moveresult);
-            break;
-
-        case Q2AI_BATTLE_FIGHT:
-            /* Dedicated combat — strafe, dodge, aim and fire.
-             * Q3 ai_dmnet.c AINode_Battle_Fight: pure combat, no item
-             * pickup.  The goal stack was emptied on entering this state. */
-            in_combat = true;
-            if (bc->enemy >= 0) {
-                Q2BotAttackMove(client, bc, bc->enemy);
-                Q2BotAimAndFire(client, bc->enemy, bot_eye);
-            }
-            break;
-
-        case Q2AI_BATTLE_RETREAT:
-            /* #7 — Navigate toward goals while defending + check nearby items.
-             * Mirrors Q3's AINode_Battle_Retreat: grabs nearby health/armor
-             * within 150 units during retreat. */
-            Q2BotNavigateGoals(client, bc, bot_eye, &moveresult);
-            Q2BotCheckBlocked(client, bc, &moveresult);
-            in_combat  = true;
-            if (bc->enemy >= 0)
-                Q2BotAimAndFire(client, bc->enemy, bot_eye);
-            /* Check for nearby goals every 1s (Q3 ai_dmnet.c:2429) */
-            if (!bc->hasnbg && bc->retreat_check_time < AAS_Time()) {
-                bc->retreat_check_time = AAS_Time() + 1.0f;
-                if (BotChooseNBGItem(bc->goalstate, bc->origin,
-                                      bc->inventory, TFL_DEFAULT,
-                                      &bc->ltg, 150)) {
-                    bc->hasnbg = true;
-                    bc->nbg_combat_time = AAS_Time() + 2.5f;
-                    bc->aistate = Q2AI_BATTLE_NBG;
-                }
-            }
-            break;
-
-        case Q2AI_BATTLE_NBG:
-            /* Navigate toward the nearby item while still aiming/firing.
-             * Mirrors Q3's AINode_Battle_NBG (ai_dmnet.c:2491). */
-            Q2BotNavigateGoals(client, bc, bot_eye, &moveresult);
-            in_combat = true;
-            if (bc->enemy >= 0 && bc->attack_skill > 0.3f)
-                Q2BotAimAndFire(client, bc->enemy, bot_eye);
-            /* Check if NBG was reached */
-            {
-                bot_goal_t nbg_top;
-                if (bc->hasnbg && BotGetTopGoal(bc->goalstate, &nbg_top)) {
-                    if (BotTouchingGoal(bc->origin, &nbg_top)) {
-                        BotPopGoal(bc->goalstate);
-                        bc->hasnbg = false;
-                        bc->aistate = (Q2BotAggression(bc) >= 50)
-                                      ? Q2AI_BATTLE_FIGHT : Q2AI_BATTLE_RETREAT;
-                    }
-                }
-            }
-            break;
-
-        case Q2AI_BATTLE_CHASE:
-            /* Navigate toward enemy's last known position.
-             * Mirrors Q3's AINode_Battle_Chase — create a temporary
-             * goal from lastenemyorigin/lastenemyareanum and drive
-             * BotMoveToGoal toward it. */
-            in_combat = true;
-            {
-                bot_goal_t chase_goal;
-                bot_moveresult_t chase_mr;
-
-                Com_Memset(&chase_goal, 0, sizeof(chase_goal));
-                chase_goal.entitynum = bc->enemy;
-                chase_goal.areanum   = bc->lastenemyareanum;
-                VectorCopy(bc->lastenemyorigin, chase_goal.origin);
-                chase_goal.mins[0] = -8; chase_goal.mins[1] = -8; chase_goal.mins[2] = -8;
-                chase_goal.maxs[0] =  8; chase_goal.maxs[1] =  8; chase_goal.maxs[2] =  8;
-
-                BotMoveToGoal(&chase_mr, bc->movestate, &chase_goal,
-                              TFL_DEFAULT);
-
-                /* If we reached the last-known position, give up */
-                if (BotTouchingGoal(bc->origin, &chase_goal)) {
-                    bc->aistate    = Q2AI_SEEK_LTG;
-                    bc->enemy      = -1;
-                    bc->chase_time = 0;
-                } else if (chase_mr.flags & MOVERESULT_MOVEMENTVIEW) {
-                    EA_View(client, chase_mr.ideal_viewangles);
-                }
-            }
-            break;
-        }
-    }
-
-    /* Debug: log current AI state if developer mode is on */
-    if (LibVarGetValue("bot_developer")) {
-        static float last_state_log = 0;
-        float now2 = AAS_Time();
-        if (now2 - last_state_log > 2.0f) {
-            static const char *statenames[] = {
-                "SEEK_LTG", "SEEK_NBG", "BATTLE_FIGHT", "BATTLE_RETREAT",
-                "BATTLE_CHASE", "BATTLE_NBG"
-            };
-            botimport.Print(PRT_MESSAGE,
-                "bot %d: state=%s enemy=%d aggr=%d hasgoal=%d health=%d\n",
-                client,
-                statenames[bc->aistate < 6 ? bc->aistate : 0],
-                bc->enemy,
-                Q2BotAggression(bc),
-                bc->hasgoal,
-                bc->health);
-            last_state_log = now2;
-        }
-    }
-
-    /* --- Collect EA input and translate to Q2 --- */
+    /* --- Collect EA input and translate to Q2 (unchanged in spirit
+     * from the previous adapter's tail end -- this part is orthogonal to
+     * where the AI decision-making comes from). BotUpdateInput above
+     * already resolved the final view angles via trap_EA_View, so
+     * q3input.viewangles below is already the fully-resolved answer; no
+     * separate priority reconstruction is needed on this side of the
+     * bridge. --- */
     Com_Memset(&q3input, 0, sizeof(q3input));
     EA_GetInput(client, thinktime, &q3input);
 
@@ -3154,38 +1741,23 @@ static int Q2BotAI(int client, float thinktime)
     VectorCopy(q3input.dir, q2input.dir);
     q2input.speed       = q3input.speed;
     q2input.actionflags = Q3ActionsToQ2(q3input.actionflags);
+    VectorCopy(q3input.viewangles, q2input.viewangles);
 
-    /* Translate EA_SelectWeapon to Q2 "use" command.
-     * The botlib's movement code (BotTravel_RocketJump, BotTravel_BFGJump)
-     * calls EA_SelectWeapon to switch weapons for special moves. */
-    if (q3input.weapon > 0 && q3input.weapon != bc->best_weapon_num) {
-        weaponinfo_t ea_wi;
-        BotGetWeaponInfo(bc->weaponstate, q3input.weapon, &ea_wi);
-        if (ea_wi.name[0]) {
-            q2import.BotClientCommand(client, "use", ea_wi.name, NULL);
-            bc->best_weapon_num = q3input.weapon;
+    /* Translate EA_SelectWeapon to Q2's "use <name>" client command.
+     * The real BotAI() (ai_main.c) calls trap_EA_SelectWeapon(bs->client,
+     * bs->weaponnum) every frame regardless of change; EA_GetInput()
+     * reports the result back as q3input.weapon. Q2 has no per-frame
+     * "desired weapon" usercmd field -- gate on q2_lastweaponcmd[] so an
+     * unchanged weapon doesn't reissue "use" 10-20x/sec (Q2's own
+     * Use_Weapon() already no-ops in that case regardless -- this is an
+     * efficiency guard, not a correctness requirement). */
+    if (q3input.weapon > 0 && q3input.weapon != q2_lastweaponcmd[client]) {
+        weaponinfo_t wi;
+        BotGetWeaponInfo(bs->ws, q3input.weapon, &wi);
+        if (wi.name[0]) {
+            q2import.BotClientCommand(client, "use", wi.name, NULL);
+            q2_lastweaponcmd[client] = q3input.weapon;
         }
-    }
-
-    /* #7 — Bot think time is managed by the game DLL which calls BotAI
-     * at its own rate.  No residual scheduling needed in the adapter. */
-
-    /* Viewangle priority:
-     *   1. MOVERESULT_MOVEMENTVIEW — special moves (rocket jump, etc.)
-     *   2. Combat aim (when in_combat, EA_View already set it)
-     *   3. Navigation yaw (derived from movement direction for efficient path following)
-     *   4. Fallback to EA viewangles */
-    if (moveresult.flags & MOVERESULT_MOVEMENTVIEW) {
-        VectorCopy(moveresult.ideal_viewangles, q2input.viewangles);
-    } else if (in_combat) {
-        VectorCopy(q3input.viewangles, q2input.viewangles);
-    } else if (q3input.speed > 0.0f &&
-               (q3input.dir[0] != 0.0f || q3input.dir[1] != 0.0f)) {
-        vec3_t movedir_angles;
-        Vector2Angles(q3input.dir, movedir_angles);
-        VectorCopy(movedir_angles, q2input.viewangles);
-    } else {
-        VectorCopy(q3input.viewangles, q2input.viewangles);
     }
 
     q2import.BotInput(client, &q2input);
@@ -3196,14 +1768,14 @@ static int Q2BotAI(int client, float thinktime)
 
 static int Q2BotConsoleMessage(int client, int type, char *message)
 {
-    q2_botclient_t *bc;
+    bot_state_t *bs;
 
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS)
+    if (client < 0 || client >= MAX_CLIENTS)
         return Q2_BLERR_INVALIDCLIENTNUMBER;
-    bc = &q2clients[client];
-    if (!bc->inuse) return Q2_BLERR_AICMFORINACTIVECLIENT;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return Q2_BLERR_AICMFORINACTIVECLIENT;
 
-    BotQueueConsoleMessage(bc->chatstate, type, message);
+    BotQueueConsoleMessage(bs->cs, type, message);
     return Q2_BLERR_NOERROR;
 }
 
@@ -3257,53 +1829,82 @@ static qboolean Q2AAS_AreaCenter(int areanum, vec3_t center)
  * ==================================================================== */
 static void Q2BotNotifyDeath(int client, int killer, int mod)
 {
-    q2_botclient_t *bc;
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return;
-    bc = &q2clients[client];
-    if (!bc->inuse) return;
-    bc->botdeathtype = mod;
-    bc->lastkilledby = killer;
-    bc->botsuicide = (client == killer || killer < 0);
+    bot_state_t *bs;
+    qboolean is_suicide;
+    int i;
+
+    if (client < 0 || client >= MAX_CLIENTS) return;
+
+    is_suicide = (client == killer || killer < 0);
+
+    /* Victim-side bookkeeping only applies when the victim is itself an
+     * active bot -- this call now also arrives for human victims (see
+     * game_q2/p_client.c's BotNotifyDeathKill) purely to drive the
+     * observer broadcast below. */
+    bs = botstates[client];
+    if (bs && bs->inuse) {
+        bs->botdeathtype = mod;
+        bs->lastkilledby = killer;
+        bs->botsuicide   = is_suicide;
+        bs->num_deaths++;
+    }
+
+    /* Tell every bot that had this (bot or human) victim tracked as its
+     * current enemy, mirroring real Q3's per-observer notification and
+     * game_q2/bl_chat.c's now-deleted BotChat_NotifyDeath's third branch
+     * -- not just the credited killer, who in a suicide doesn't exist. */
+    if (is_suicide) {
+        for (i = 0; i < maxclients; i++) {
+            bot_state_t *obs = botstates[i];
+            if (obs && obs->inuse && obs->enemy == client)
+                obs->enemysuicide = true;
+        }
+    }
 }
 
 static void Q2BotNotifyKill(int client, int victim, int mod)
 {
-    q2_botclient_t *bc;
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return;
-    bc = &q2clients[client];
-    if (!bc->inuse) return;
-    bc->enemydeathtype = mod;
-    bc->lastkilledplayer = victim;
+    bot_state_t *bs;
+    if (client < 0 || client >= MAX_CLIENTS) return;
+    bs = botstates[client];
+    if (!bs || !bs->inuse) return;
+    bs->enemydeathtype   = mod;
+    bs->lastkilledplayer = victim;
+    bs->num_kills++;
+    /* Suicide/observer notification is handled by Q2BotNotifyDeath above,
+     * which now runs for every victim (bot or human) and broadcasts
+     * bs->enemysuicide to every bot tracking that victim as its enemy --
+     * this call path only ever fires for genuine, non-suicide kills. */
 }
 
 static int Q2BotGetChatState(int client)
 {
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return 0;
-    return q2clients[client].chatstate;
+    if (client < 0 || client >= MAX_CLIENTS || !botstates[client]) return 0;
+    return botstates[client]->cs;
 }
 
 static int Q2BotGetCharacter(int client)
 {
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return 0;
-    return q2clients[client].character;
+    if (client < 0 || client >= MAX_CLIENTS || !botstates[client]) return 0;
+    return botstates[client]->character;
 }
 
 static int Q2BotGetEnemy(int client)
 {
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return -1;
-    return q2clients[client].enemy;
+    if (client < 0 || client >= MAX_CLIENTS || !botstates[client]) return -1;
+    return botstates[client]->enemy;
 }
 
 static float Q2BotGetLastChatTime(int client)
 {
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return 0;
-    return q2clients[client].lastchat_time;
+    if (client < 0 || client >= MAX_CLIENTS || !botstates[client]) return 0;
+    return botstates[client]->lastchat_time;
 }
 
 static void Q2BotSetLastChatTime(int client, float time)
 {
-    if (client < 0 || client >= Q2_BOTLIB_MAX_CLIENTS) return;
-    q2clients[client].lastchat_time = time;
+    if (client < 0 || client >= MAX_CLIENTS || !botstates[client]) return;
+    botstates[client]->lastchat_time = time;
 }
 
 static int Q2BotNextConsoleMessage(int chatstate, bot_consolemessage_t *cm)
@@ -3350,7 +1951,6 @@ q2_bot_export_t *GetBotAPI(q2_bot_import_t *import)
     q2import = *import;
 
     Com_Memset(fs_files,  0, sizeof(fs_files));
-    Com_Memset(q2clients, 0, sizeof(q2clients));
     q2_bsp_entitystring[0] = '\0';
 
     /* Build Q3 import from Q2 import */

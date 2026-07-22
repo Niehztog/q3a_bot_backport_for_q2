@@ -259,6 +259,29 @@ typedef struct bot_state_s
 	int blueflagstatus;								//0 = at base, 1 = not at base
 	int neutralflagstatus;							//0 = at base, 1 = our team has flag, 2 = enemy team has flag, 3 = enemy team dropped the flag
 	int flagstatuschanged;							//flag status changed
+	// --- Q2 port addition (Phase 2), not present in real Q3: this bot's
+	// real CTF team (TEAM_RED/TEAM_BLUE/TEAM_FREE). Real Q3's BotTeam()
+	// (ai_dmq3.c) learns team via trap_GetConfigstring, which this Q2 port
+	// cannot implement (the frozen game<->botlib ABI has no configstring
+	// fetch of any kind). Written every frame by botlib/be_interface_q2.c's
+	// Q2BotUpdateClient from Q2's own STAT_CTF_JOINED_TEAM1_PIC/TEAM2_PIC
+	// stats (already part of the frozen ABI's stats[] array); read back by
+	// BotTeam(). Safe to add: bot_state_t never crosses the frozen ABI.
+	int q2_realctfteam;
+	// --- Q2 port addition, not present in real Q3: who/what last hurt
+	// this client (without killing it), for BotChat_HitTalking/HitNoDeath/
+	// HitNoKill (ai_chat.c), which otherwise read g_entities[].client->
+	// lasthurt_client/mod -- permanently NULL in this port, since botlib.so
+	// has no real gentity_t array. Written every frame by
+	// botlib/be_interface_q2.c's Q2BotUpdateClient from Q2's own
+	// lasthurt_client/mod (game_q2/g_combat.c), piggybacked through
+	// stats[28]/[29] (already part of the frozen ABI's stats[] array;
+	// unused by any real STAT_*). Safe to add: bot_state_t never crosses
+	// the frozen ABI. Only populated for clients that are themselves
+	// active bots (Q2BotUpdateClient only runs for bots), so a lookup
+	// against a human client number still reads as "nobody hurt them".
+	int q2_reallasthurt_client;
+	int q2_reallasthurt_mod;
 	int forceorders;								//true if forced to give orders
 	int flagcarrier;								//team mate carrying the enemy flag
 	int ctfstrategy;								//ctf strategy

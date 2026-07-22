@@ -15,7 +15,6 @@
 #include "bl_spawn.h"
 #include "bl_redirgi.h"
 #include "bl_botcfg.h"
-#include "bl_chat.h"
 
 //#define TOURNEY
 
@@ -389,7 +388,11 @@ int BotLib_BotSetupClient(edict_t *ent, char *userinfo)
 	//
 	if (!lib->funcs.BotSetupClient(DF_ENTCLIENT(ent), &settings))
 		return false;
-	BotChat_OnEnterGame(ent);
+	/* BotChat_OnEnterGame() used to fire here; superseded automatically
+	 * now that the real ported ai_main.c's BotAISetupClient (called
+	 * above, via lib->funcs.BotSetupClient) sets bs->entergamechat=false,
+	 * and BotDeathmatchAI's own enter-game chat check (ai_dmq3.c) fires
+	 * on the bot's next few AI frames -- no explicit call needed. */
 	return true;
 } //end of the function BotLib_BotSetupClient
 //==========================================================================
@@ -404,8 +407,10 @@ void BotLib_BotShutdownClient(edict_t *client)
 
 	lib = GetBotLibrary(client);
 	if (!lib) return;
-	if (client->flags & FL_BOT)
-		BotChat_OnExitGame(client);
+	/* BotChat_OnExitGame() used to fire here; superseded automatically
+	 * now that the real ported ai_main.c's BotAIShutdownClient (called
+	 * below, via lib->funcs.BotShutdownClient) already triggers
+	 * BotChat_ExitGame() itself before tearing the bot state down. */
 	lib->funcs.BotShutdownClient(DF_ENTCLIENT(client));
 } //end of the function BotLib_BotShutDownClient
 //==========================================================================
@@ -537,6 +542,16 @@ void BotLib_BotUpdateClient(edict_t *bot)
 	buc.rdflags = bot->client->ps.rdflags;
 	//
 	memcpy(buc.stats, bot->client->ps.stats, MAX_STATS * sizeof(short));
+	/* Piggyback lasthurt_client/mod through stats[28]/[29] -- unused by
+	 * any baseq2 or CTF STAT_* (highest defined is STAT_CTF_ID_VIEW=27),
+	 * the same trick already used for CTF team detection via
+	 * stats[22]/[23]. Q2's "-1 = nobody hurt me" is translated to Q3's
+	 * own "0 = nobody" convention (real client 0 colliding with "nobody"
+	 * is a real, pre-existing Q3 ai_chat.c quirk, not introduced here).
+	 * MOD_FRIENDLY_FIRE is masked off since it doesn't fit a short and
+	 * chat only needs the base means-of-death for weapon-name lookup. */
+	buc.stats[28] = (bot->client->lasthurt_client < 0) ? 0 : (short)bot->client->lasthurt_client;
+	buc.stats[29] = (short)(bot->client->lasthurt_mod & ~MOD_FRIENDLY_FIRE);
 	//====================================
 	//inventory
 	memcpy(buc.inventory, bot->client->pers.inventory, MAX_ITEMS * sizeof(int));
@@ -671,7 +686,13 @@ void BotLib_BotAI(edict_t *bot, float thinktime)
 	lib = GetBotLibrary(bot);
 	if (!lib) return;
 	lib->funcs.BotAI(DF_ENTCLIENT(bot), thinktime);
-	BotChat_Frame(bot);
+	/* BotChat_Frame() used to fire here (random chat, hit reactions,
+	 * player-chat replies); superseded automatically now that
+	 * lib->funcs.BotAI (above) runs the real ported BotAI() ->
+	 * BotDeathmatchAI(), which already drives all of that itself
+	 * (BotChat_Random/HitNoDeath/HitNoKill calls inside
+	 * game_q3/ai_dmnet.c's AINode_* functions, and
+	 * BotCheckConsoleMessages() inside BotDeathmatchAI for replies). */
 } //end of the function BotLib_BotAI
 //===========================================================================
 //
