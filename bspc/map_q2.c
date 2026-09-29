@@ -1084,6 +1084,142 @@ qboolean Q2_ParseBSPEntity(int entnum)
 	return true;
 } //end of the function Q2_ParseBSPEntity
 //===========================================================================
+// Q2: a target_laser that is on (spawnflags 1) or switched by a func_timer
+// damages every frame whatever crosses its beam.  One doing 10 or more a
+// frame (the default is 1) becomes lava in the AAS, as a trigger_hurt does:
+// a chain of thin boxes along the beam, from the laser to the first solid
+// (target_laser_think).  rdm11's four timed lasers killed a bot every 30 s.
+//===========================================================================
+static int Q2_WorldPointContents(vec3_t p)
+{
+	int nodenum;
+	dnode_t *node;
+	dplane_t *plane;
+
+	nodenum = dmodels[0].headnode;
+	while (nodenum >= 0)
+	{
+		node = &dnodes[nodenum];
+		plane = &dplanes[node->planenum];
+		if (DotProduct(p, plane->normal) - plane->dist >= 0) nodenum = node->children[0];
+		else nodenum = node->children[1];
+	} //end while
+	return dleafs[-1 - nodenum].contents;
+} //end of the function Q2_WorldPointContents
+
+static void Q2_CreateLavaBox(vec3_t mins, vec3_t maxs)
+{
+	mapbrush_t *b;
+	side_t *side;
+	int i, j;
+	vec3_t normal;
+
+	if (nummapbrushes >= MAX_MAPFILE_BRUSHES)
+		Error ("nummapbrushes >= MAX_MAPFILE_BRUSHES");
+	b = &mapbrushes[nummapbrushes];
+	memset(b, 0, sizeof(mapbrush_t));
+	b->original_sides = &brushsides[nummapbrushsides];
+	b->entitynum = 0;
+	b->brushnum = nummapbrushes - entities[0].firstbrush;
+	b->leafnum = -1;
+	for (i = 0; i < 3; i++)
+	{
+		for (j = 0; j < 2; j++)
+		{
+			if (nummapbrushsides >= MAX_MAPFILE_BRUSHSIDES)
+				Error ("MAX_MAPFILE_BRUSHSIDES");
+			side = &brushsides[nummapbrushsides];
+			memset(side, 0, sizeof(side_t));
+			VectorClear(normal);
+			normal[i] = j ? -1 : 1;
+			side->planenum = FindFloatPlane(normal, j ? -mins[i] : maxs[i]);
+			side->contents = CONTENTS_LAVA;
+			side->flags = SFL_TEXTURED;
+			nummapbrushsides++;
+			b->numsides++;
+		} //end for
+	} //end for
+	b->contents = CONTENTS_LAVA;
+	AAS_CreateMapBrushes(b, &entities[0], false);
+} //end of the function Q2_CreateLavaBox
+
+static int Q2_TimerSwitched(char *targetname)
+{
+	int i;
+
+	if (!targetname[0]) return false;
+	for (i = 0; i < num_entities; i++)
+	{
+		if (strcmp(ValueForKey(&entities[i], "classname"), "func_timer")) continue;
+		if (!strcmp(ValueForKey(&entities[i], "target"), targetname)) return true;
+	} //end for
+	return false;
+} //end of the function Q2_TimerSwitched
+
+static void Q2_CreateLaserHazards(void)
+{
+	int i, j, k, n, spawnflags;
+	float len, dist, width;
+	char *target;
+	vec3_t origin, dir, angles, end, p, q, mins, maxs;
+	entity_t *mapent;
+
+	n = 0;
+	for (i = 0; i < num_entities; i++)
+	{
+		mapent = &entities[i];
+		if (strcmp(ValueForKey(mapent, "classname"), "target_laser")) continue;
+		spawnflags = atoi(ValueForKey(mapent, "spawnflags"));
+		if (!(spawnflags & 1) && !Q2_TimerSwitched(ValueForKey(mapent, "targetname"))) continue;
+		if (FloatForKey(mapent, "dmg") < 10) continue;
+		GetVectorForKey(mapent, "origin", origin);
+		//the beam points at its target or along its angles (G_SetMovedir)
+		target = ValueForKey(mapent, "target");
+		if (target[0])
+		{
+			for (j = 0; j < num_entities; j++)
+			{
+				if (!strcmp(ValueForKey(&entities[j], "targetname"), target)) break;
+			} //end for
+			if (j >= num_entities) continue;
+			GetVectorForKey(&entities[j], "origin", end);
+			VectorSubtract(end, origin, dir);
+		} //end if
+		else
+		{
+			VectorClear(angles);
+			if (ValueForKey(mapent, "angles")[0]) GetVectorForKey(mapent, "angles", angles);
+			else angles[1] = FloatForKey(mapent, "angle");
+			VectorClear(dir);
+			if (!angles[0] && angles[1] == -1 && !angles[2]) dir[2] = 1;
+			else if (!angles[0] && angles[1] == -2 && !angles[2]) dir[2] = -1;
+			else AngleVectors(angles, dir, NULL, NULL);
+		} //end else
+		if (VectorNormalize(dir) < 0.1) continue;
+		//to the first solid, at most 2048 units
+		for (len = 0; len < 2048; len += 4)
+		{
+			VectorMA(origin, len + 4, dir, p);
+			if (Q2_WorldPointContents(p) & CONTENTS_SOLID) break;
+		} //end for
+		//the fat beam (spawnflags 64) is 16 wide, the normal one 4
+		width = (spawnflags & 64) ? 8 : 2;
+		for (dist = 0; dist < len; dist += 16)
+		{
+			VectorMA(origin, dist, dir, p);
+			VectorMA(origin, (dist + 16 < len) ? dist + 16 : len, dir, q);
+			for (k = 0; k < 3; k++)
+			{
+				mins[k] = (p[k] < q[k] ? p[k] : q[k]) - width;
+				maxs[k] = (p[k] > q[k] ? p[k] : q[k]) + width;
+			} //end for
+			Q2_CreateLavaBox(mins, maxs);
+		} //end for
+		n++;
+	} //end for
+	Log_Print("%6d damaging target_laser beams\n", n);
+} //end of the function Q2_CreateLaserHazards
+//===========================================================================
 //
 // Parameter:				-
 // Returns:					-
@@ -1116,6 +1252,7 @@ void Q2_LoadMapFromBSP(char *filename, int offset, int length)
 	{
 		Q2_ParseBSPEntity(i);
 	} //end for
+	if (create_aas) Q2_CreateLaserHazards();
 
 	//get the map mins and maxs from the world model
 	ClearBounds(map_mins, map_maxs);

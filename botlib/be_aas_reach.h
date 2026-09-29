@@ -38,6 +38,40 @@ int AAS_ContinueInitReachability(float time);
 int AAS_BestReachableLinkArea(aas_link_t *areas);
 #endif //AASINTERN
 
+//Q2: a closed func_train path and the trains going round it
+#ifndef MAX_TRAINPATHS
+#define MAX_TRAINPATHS		16
+#define MAX_TRAINCORNERS	64
+#define MAX_PATHTRAINS		32
+
+typedef struct aas_trainpath_s
+{
+	int numcorners;
+	int cornerent[MAX_TRAINCORNERS];		//BSP entity of each path_corner
+	vec3_t corner[MAX_TRAINCORNERS];		//train mins at each corner
+	float dist[MAX_TRAINCORNERS+1];			//path position of each corner
+	float wait[MAX_TRAINCORNERS];			//wait at each corner
+	int teleport[MAX_TRAINCORNERS];			//the train jumps to the corner
+	float length;							//path length once round
+	float speed;							//train speed
+	float looptime;							//seconds once round, waits included
+	vec3_t size;							//train size
+	int numtrains;
+	int trainmodel[MAX_PATHTRAINS];			//model numbers of the trains
+} aas_trainpath_t;
+#endif //MAX_TRAINPATHS
+
+//finds the func_train paths in the BSP entities
+void AAS_InitTrainPaths(void);
+//the path of the train with the given model, NULL if it is not ridden
+aas_trainpath_t *AAS_TrainPathForModel(int modelnum);
+//the train mins at the given path position
+void AAS_TrainPathPoint(aas_trainpath_t *path, float pos, vec3_t mins);
+//the path position of a train with its mins at the given point, of two on
+//overlapping segments the one nearest the guess (-1: none)
+float AAS_TrainPathPos(aas_trainpath_t *path, vec3_t mins, float guess);
+//seconds a train takes from one path position to another
+float AAS_TrainPathTime(aas_trainpath_t *path, float from, float to);
 //returns true if the are has reachabilities to other areas
 int AAS_AreaReachability(int areanum);
 //returns the best reachable area and goal origin for a bounding box at the given origin

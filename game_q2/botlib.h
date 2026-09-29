@@ -289,10 +289,6 @@ typedef struct bot_import_s
 	int		(*DebugLineCreate)(void);
 	void		(*DebugLineDelete)(int line);
 	void		(*DebugLineShow)(int line, vec3_t start, vec3_t end, int color);
-	//PVS check — delegates to engine's PF_inPVS for Q3 botlib visibility culling
-	qboolean	(*inPVS)(vec3_t p1, vec3_t p2);
-	//CTF/teamplay: check if two entities (1-indexed) are on the same team
-	int			(*OnSameTeam)(int ent1, int ent2);
 } bot_import_t;
 
 //linking of bot library

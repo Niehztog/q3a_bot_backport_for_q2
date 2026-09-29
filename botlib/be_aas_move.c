@@ -289,7 +289,7 @@ void AAS_JumpReachRunStart(aas_reachability_t *reach, vec3_t runstart)
 //===========================================================================
 float AAS_WeaponJumpZVelocity(vec3_t origin, float radiusdamage)
 {
-	vec3_t kvel, v, start, end, forward, right, viewangles, dir;
+	vec3_t kvel, v, start, end, forward, right, viewangles, dir, jumped;
 	float	mass, knockback, points;
 	vec3_t rocketoffset = {8, 8, -8};
 	vec3_t botmins = {-16, -16, -24};
@@ -302,7 +302,8 @@ float AAS_WeaponJumpZVelocity(vec3_t origin, float radiusdamage)
 	viewangles[ROLL] = 0;
 	//get the start point shooting from
 	VectorCopy(origin, start);
-	start[2] += 8; //view offset Z
+	//Q2: P_ProjectSource, viewheight 22 - 8
+	start[2] += 22; //view offset Z
 	AngleVectors(viewangles, forward, right, NULL);
 	start[0] += forward[0] * rocketoffset[0] + right[0] * rocketoffset[1];
 	start[1] += forward[1] * rocketoffset[0] + right[1] * rocketoffset[1];
@@ -311,9 +312,15 @@ float AAS_WeaponJumpZVelocity(vec3_t origin, float radiusdamage)
 	VectorMA(start, 500, forward, end);
 	//trace a line to get the impact point
 	bsptrace = AAS_Trace(start, NULL, NULL, end, 1, CONTENTS_SOLID);
+	//Q2: the bot fires in the first half of its frame and jumps in the
+	//second (Gladiator's delayed jump); the rocket explodes in the next
+	//server frame, when the bot has gone up 12.5 units at 230 (270 less
+	//50 ms of gravity).  The radius damage counts from the impact point.
+	VectorCopy(origin, jumped);
+	jumped[2] += 12.5;
 	//calculate the damage the bot will get from the rocket impact
 	VectorAdd(botmins, botmaxs, v);
-	VectorMA(origin, 0.5, v, v);
+	VectorMA(jumped, 0.5, v, v);
 	VectorSubtract(bsptrace.endpos, v, v);
 	//
 	points = radiusdamage - 0.5 * VectorLength(v);
@@ -325,12 +332,15 @@ float AAS_WeaponJumpZVelocity(vec3_t origin, float radiusdamage)
 	//knockback is the same as the damage points
 	knockback = points;
 	//direction of the damage (from trace.endpos to bot origin)
-	VectorSubtract(origin, bsptrace.endpos, dir);
+	VectorSubtract(jumped, bsptrace.endpos, dir);
 	VectorNormalize(dir);
 	//damage velocity
 	VectorScale(dir, 1600.0 * (float)knockback / mass, kvel);	//the rocket jump hack...
-	//rocket impact velocity + jump velocity
-	return kvel[2] + aassettings.phys_jumpvel;
+	//rocket impact velocity + jump velocity (Q2: 12.5 units up, see above).
+	//This gives 619 on a flat floor; q2ded measured 612 standing still and
+	//588 in the bots' rocket jumps (a bot is rarely quite still), so the
+	//blast counts 92%
+	return 0.92 * kvel[2] + aassettings.phys_jumpvel - 0.05 * aassettings.phys_gravity;
 } //end of the function AAS_WeaponJumpZVelocity
 //===========================================================================
 //

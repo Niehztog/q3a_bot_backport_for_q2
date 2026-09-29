@@ -36,6 +36,19 @@ CONTEXT_NEARBYITEM
 	[("Invulnerability", 1), ("invul", 0)]
 } //end CONTEXT_NEARBYITEM
 
+//flags
+CONTEXT_CTFREDTEAM
+{
+	[("Red Flag", 0), ("our base", 0), ("our flag", 0), ("red base", 0), ("base", 0)]
+	[("Blue Flag", 0), ("enemy base", 0), ("blue base", 0), ("enemy flag", 0)]
+} //end CONTEXT_CTFREDTEAM
+
+CONTEXT_CTFBLUETEAM
+{
+	[("Red Flag", 0), ("enemy flag", 0), ("red base", 0), ("enemy base", 0)]
+	[("Blue Flag", 0), ("our base", 0), ("our flag", 0), ("blue base", 0), ("base", 0)]
+} //end CONTEXT_CTFBLUETEAM
+
 CONTEXT_NORMAL
 {
 	//contractions

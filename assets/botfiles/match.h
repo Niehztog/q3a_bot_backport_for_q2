@@ -12,6 +12,7 @@
 #define EC	"\x19"
 
 //match template contexts
+#define MTCONTEXT_CLIENTOBITUARY		1
 #define MTCONTEXT_MISC					2
 #define MTCONTEXT_INITIALTEAMCHAT		4
 #define MTCONTEXT_TIME					8
@@ -73,6 +74,10 @@
 #define MSG_CHATTELL					202
 //
 #define MSG_CTF							300		//ctf message
+//obituaries, the means of death (mod.h) as sub type
+#define MSG_DEATH						400		//killed by another player
+#define MSG_SELFDEATH					401		//killed by oneself
+#define MSG_WORLDDEATH					402		//killed by the world
 
 //command sub types
 #define ST_SOMEWHERE					0
@@ -119,5 +124,8 @@
 #define TIME							6
 #define NAME							6
 #define MORE							6
+//obituary variables
+#define VICTIM							0
+#define KILLER							1
 
 

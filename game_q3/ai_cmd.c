@@ -30,16 +30,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
-#include "g_local.h"
-#include "botlib.h"
-#include "be_aas.h"
-#include "be_ea.h"
-#include "be_ai_char.h"
-#include "be_ai_chat.h"
-#include "be_ai_gen.h"
-#include "be_ai_goal.h"
-#include "be_ai_move.h"
-#include "be_ai_weap.h"
+/* Q2 compatibility: pull in the shared compat shim instead of Q3's own
+ * g_local.h/botlib.h/be_*.h engine-shaped headers (see
+ * botlib/ai_q2_compat.h). */
+#include "../botlib/ai_q2_compat.h"
 //
 #include "ai_main.h"
 #include "ai_dmq3.h"
@@ -53,8 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "syn.h"				//synonyms
 #include "match.h"				//string matching types and vars
 
-// for the voice chats
-#include "../../ui/menudef.h"
+/* Voice-chat VOICECHAT_* constants come from ai_q2_compat.h instead of
+ * MISSIONPACK's ui/menudef.h (outside this repo; Q2 has no voice chat). */
 
 int notleader[MAX_CLIENTS];
 
@@ -1308,7 +1302,7 @@ void BotMatch_StartTeamLeaderShip(bot_state_t *bs, bot_match_t *match) {
 		//get the team mate that will be the team leader
 		trap_BotMatchVariable(match, NETNAME, teammate, sizeof(teammate));
 		strncpy(bs->teamleader, teammate, sizeof(bs->teamleader));
-		bs->teamleader[sizeof(bs->teamleader)] = '\0';
+		bs->teamleader[sizeof(bs->teamleader)-1] = '\0';
 	}
 	//chats for someone else
 	else {
@@ -1519,20 +1513,20 @@ void BotMatch_WhereAreYou(bot_state_t *bs, bot_match_t *match) {
 	char netname[MAX_MESSAGE_SIZE];
 	char *nearbyitems[] = {
 		"Shotgun",
+		"Super Shotgun",
+		"Machinegun",
+		"Chaingun",
 		"Grenade Launcher",
 		"Rocket Launcher",
-		"Plasmagun",
+		"HyperBlaster",
 		"Railgun",
-		"Lightning Gun",
 		"BFG10K",
 		"Quad Damage",
-		"Regeneration",
-		"Battle Suit",
-		"Speed",
-		"Invisibility",
-		"Flight",
-		"Armor",
-		"Heavy Armor",
+		"Invulnerability",
+		"Mega Health",
+		"Jacket Armor",
+		"Combat Armor",
+		"Body Armor",
 		"Red Flag",
 		"Blue Flag",
 #ifdef MISSIONPACK

@@ -41,6 +41,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define TFL_BARRIERJUMP			0x00000008	//jumping onto a barrier
 #define TFL_JUMP				0x00000010	//jumping
 #define TFL_LADDER				0x00000020	//climbing a ladder
+#define TFL_FUNCTRAIN			0x00000040	//Q2: riding a func_train
 #define TFL_WALKOFFLEDGE		0x00000080	//walking of a ledge
 #define TFL_SWIM				0x00000100	//swimming
 #define TFL_WATERJUMP			0x00000200	//jumping out of the water
@@ -70,7 +71,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 	TFL_JUMP|TFL_LADDER|\
 	TFL_WALKOFFLEDGE|TFL_SWIM|TFL_WATERJUMP|\
 	TFL_TELEPORT|TFL_ELEVATOR|\
-	TFL_AIR|TFL_WATER|TFL_JUMPPAD|TFL_FUNCBOB
+	TFL_AIR|TFL_WATER|TFL_JUMPPAD|TFL_FUNCBOB|TFL_FUNCTRAIN
 
 typedef enum
 {

@@ -71,6 +71,8 @@ jobs:
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
+          # the game reads the bot list from the mod directory itself
+          mv q3bot/botfiles/bots.cfg q3bot/
           tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload Linux artifact
@@ -126,6 +128,9 @@ jobs:
             Copy-Item $_.FullName -Destination q3bot -Recurse -Force
           }
 
+          # the game reads the bot list from the mod directory itself
+          Move-Item q3bot\botfiles\bots.cfg q3bot
+
           Compress-Archive -Path q3bot -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
 
       - name: Upload Windows artifact
@@ -168,6 +173,8 @@ jobs:
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
+          # the game reads the bot list from the mod directory itself
+          mv q3bot/botfiles/bots.cfg q3bot/
           tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload macOS artifact

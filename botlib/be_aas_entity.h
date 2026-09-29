@@ -48,6 +48,8 @@ void AAS_EntitySize(int entnum, vec3_t mins, vec3_t maxs);
 int AAS_EntityModelNum(int entnum);
 //returns the origin of an entity with the given model number
 int AAS_OriginOfMoverWithModelNum(int modelnum, vec3_t origin);
+//Q2: the entity number of the mover with the given model
+int AAS_MoverWithModelNum(int modelnum);
 //returns the best reachable area the entity is situated in
 int AAS_BestReachableEntityArea(int entnum);
 //returns the info of the given entity
