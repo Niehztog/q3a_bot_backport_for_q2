@@ -374,6 +374,10 @@ typedef struct
 #define WEAP_CHAINFIST			18		// PGM
 #endif //ROGUE
 
+#ifdef ZOID
+#define WEAP_GRAPPLE				19		// last in SP_worldspawn's list
+#endif //ZOID
+
 typedef struct gitem_s
 {
 	char		*classname;	// spawning name

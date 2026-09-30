@@ -1178,15 +1178,23 @@ void SP_worldspawn (edict_t *ent)
 		gi.modelindex ("#w_hyperblaster.md2");
 		gi.modelindex ("#w_railgun.md2");
 		gi.modelindex ("#w_bfg.md2");
-
-#ifdef ZOID
-		gi.modelindex( "#w_grapple.md2");
-#endif //ZOID
+		// Q2 port fix: the client numbers these models in the order they are
+		// registered and draws model weapmodel for a player's weapon, so the
+		// mission-pack models follow WEAP_PHALANX (12) .. WEAP_CHAINFIST (18)
+		// and the grapple comes last, WEAP_GRAPPLE (19). Gladiator's list had
+		// the grapple at 12 and no phalanx or ripper model, so every
+		// mission-pack weapon showed the model of the next one in the list.
+		// 19 models plus weapon.md2 are the 20 a 3.21 client takes.
+		gi.modelindex ("#w_phalanx.md2");			// XATRIX
+		gi.modelindex ("#w_ripper.md2");			// XATRIX
 		gi.modelindex ("#w_disrupt.md2");			// PGM
 		gi.modelindex ("#w_etfrifle.md2");			// PGM
 		gi.modelindex ("#w_plasma.md2");			// PGM
 		gi.modelindex ("#w_plauncher.md2");			// PGM
 		gi.modelindex ("#w_chainfist.md2");			// PGM
+#ifdef ZOID
+		gi.modelindex( "#w_grapple.md2");
+#endif //ZOID
 	}
 	//-------------------
 

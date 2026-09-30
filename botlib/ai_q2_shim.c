@@ -273,9 +273,22 @@ void trap_GetUserinfo(int num, char *buf, int size)
 	if (size > 0) buf[0] = '\0';
 }
 
+/*
+ * trap_SetUserinfo -- the botlib cannot write a Q2 client's userinfo. The
+ * one key the game needs is the "sex" BotDeathmatchAI stores when a bot is
+ * set up (ai_dmq3.c): Q2's obituaries read it as the "gender" key
+ * (p_client.c IsFemale/IsNeutral), and without it every bot "blew itself
+ * up". Gladiator's botlib sent the character's gender as the bot's
+ * "gender" client command on its first frame (be_ai2_dmq2.c
+ * BotDeathmatchAI), which game_q2/bl_cmd.c BotCmd puts into the userinfo;
+ * send the same command. The other key, "teamtask", has no Q2 counterpart.
+ */
 void trap_SetUserinfo(int num, const char *buf)
 {
-	(void)num; (void)buf;
+	const char *sex = Info_ValueForKey(buf, "sex");
+
+	if (*sex)
+		trap_EA_Command(num, va("gender %s", sex));
 }
 
 void trap_SendConsoleCommand(int exec_when, char *text)

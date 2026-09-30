@@ -48,6 +48,17 @@ The current analysis results of the code structure differences between Q2 Gladia
 
 This repository and Makefile have been optimized to work with the Yamagi Q2 Build Environment. Follow [this guide](https://github.com/yquake2/yquake2/blob/master/doc/020_installation.md#compiling-from-source) on how to set up the build environment, clone this repo inside mingw32 shell, change to its directory and type `make`.
 
+## Player models
+
+The bots appear as their Quake III Arena characters: `bots.cfg` gives each bot the player model and skin that Quake III's `scripts/bots.txt` gives it (`sarge/default`, `biker/cadavre`, ...), and Team Arena's for Fritzkrieg and pi. These models are part of Quake III Arena and Team Arena and are not included here. Convert them from your own copies of the games with [q3player2md2](https://github.com/Niehztog/q3player2md2) and copy what it writes to `out/players/` into `baseq2/players/` of every Quake II installation that plays with the bots. Given the mission packs' data, it also puts their weapons in the players' hands:
+
+```
+python3 q3player2md2.py --q3 <quake3>/baseq3 --q2 <quake2>/baseq2 --q2 <quake2>/xatrix --q2 <quake2>/rogue --all
+python3 q3player2md2.py --q3 <quake3>/baseq3 --q3 <quake3>/missionpack --q2 <quake2>/baseq2 --q2 <quake2>/xatrix --q2 <quake2>/rogue fritzkrieg pi
+```
+
+Without them, Quake II shows these bots as `male/grunt`.
+
 ## Call for help
 
 The core integration is working, but there is still room for improvement - bot personality tuning, further weapon weight calibration, testing across more maps and game modes, and potential edge cases in the adapter layer. Anyone familiar with Q2 or Q3 engine internals is very welcome to contribute. Join me in my effort of bringing back this brilliant peace of Quake II history to modern engines.

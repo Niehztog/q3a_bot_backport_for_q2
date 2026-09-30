@@ -2760,7 +2760,7 @@ always owned, never in the world
 		0,
 		NULL,
 		IT_WEAPON|IT_CTF,
-		0,
+		WEAP_GRAPPLE,	// Q2 port fix: was 0, drawn as weapon.md2 (the shotgun)
 		NULL,
 		0,
 /* precache */ "weapons/grapple/grfire.wav weapons/grapple/grpull.wav weapons/grapple/grhang.wav weapons/grapple/grreset.wav weapons/grapple/grhit.wav models/weapons/grapple/hook/tris.md2"
