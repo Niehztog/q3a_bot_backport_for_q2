@@ -167,6 +167,14 @@ endif
 
 BOTCFLAGS=-O0
 
+# The botlib exports GetBotAPI and nothing else (botlib/be_interface_q2.h):
+# a game may hold another bot library at the same time, Gladiator's, whose
+# functions have the same names. A PE DLL exports only what is marked
+# dllexport already.
+ifneq ($(YQ2_OSTYPE), Windows)
+BOTCFLAGS += -fvisibility=hidden
+endif
+
 # ----------
 
 # Base LDFLAGS.

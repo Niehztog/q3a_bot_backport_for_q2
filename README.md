@@ -48,6 +48,100 @@ The current analysis results of the code structure differences between Q2 Gladia
 
 This repository and Makefile have been optimized to work with the Yamagi Q2 Build Environment. Follow [this guide](https://github.com/yquake2/yquake2/blob/master/doc/020_installation.md#compiling-from-source) on how to set up the build environment, clone this repo inside mingw32 shell, change to its directory and type `make`.
 
+## Using it from a game
+
+`make` builds three files into `release/`:
+
+- `game/game.so` (`game.dll` on Windows) is **the game**: the Gladiator Bot's game library for Quake II, which plays deathmatch, Capture the Flag, Rocket Arena and both mission packs, and adds the bots to them.
+- `botlib/botlib.so` (`botlib.dll`) is **the bot library**: the Quake III Arena bot. The game loads it when the first bot joins.
+- `bspc/bspc` (`bspc.exe`) prepares maps for the bots.
+
+The steps below are for [Yamagi Quake II](https://github.com/yquake2/yquake2).
+
+### Installing
+
+Give the bot a directory of its own next to `baseq2`, for example `q3bot`. Don't install it over the Gladiator Bot: its bot and map files have the same names as this bot's, but other formats.
+
+```
+quake2/
+  baseq2/
+  q3bot/
+    game.so       from release/game/ (game.dll on Windows)
+    botlib.so     from release/botlib/ (botlib.dll on Windows)
+    bots.cfg      from assets/botfiles/: the bots that can join
+    botfiles/     assets/botfiles/ with everything in it: the bots' characters, chats and preferences for items and weapons
+    maps/         the bots' map files, see below
+```
+
+On Linux, from this directory (on Windows, copy the same files by hand):
+
+```sh
+Q2=~/quake2                     # the directory with baseq2 in it
+mkdir -p $Q2/q3bot/maps
+cp release/game/game.so release/botlib/botlib.so assets/botfiles/bots.cfg $Q2/q3bot/
+cp -r assets/botfiles $Q2/q3bot/
+```
+
+Capture the Flag and the mission packs also need their game data in the bot's directory, under names Quake II loads from there: copy `ctf/pak0.pak` and `ctf/pak1.pak` to `q3bot/pak0.pak` and `q3bot/pak1.pak`, `xatrix/pak0.pak` (The Reckoning) to `q3bot/pak2.pak` and `rogue/pak0.pak` (Ground Zero) to `q3bot/pak3.pak`.
+
+### Preparing the maps
+
+The bots find their way around a map with its navigation file, `maps/<map>.aas` in the bot's directory, which `bspc` makes from the map. It reads the maps straight out of Quake II's pak files, and takes seconds to a minute per map. This makes `q2dm1.aas` to `q2dm8.aas` for the eight deathmatch maps:
+
+```sh
+release/bspc/bspc -bsp2aas "$Q2/baseq2/pak1.pak/maps/q2dm*.bsp" -output $Q2/q3bot/maps
+```
+
+On Windows: `release\bspc\bspc.exe -bsp2aas "C:\Quake2\baseq2\pak1.pak\maps\q2dm*.bsp" -output C:\Quake2\q3bot\maps`
+
+The Capture the Flag maps are `q2ctf*.bsp` in `ctf/pak0.pak` and `ctf/pak1.pak`, The Reckoning's `xdm*.bsp` in `xatrix/pak0.pak` and Ground Zero's `rdm*.bsp` in `rogue/pak0.pak`. For a map that is a file of its own, give its path. The `.aas` files of the Gladiator Bot don't work: they are in an older format.
+
+### Playing
+
+Start Quake II with the bot's directory and a map, and from Quake II's own directory: the game and the bot library look for their files relative to it.
+
+```sh
+cd $Q2
+./quake2 +set game q3bot +set deathmatch 1 +set maxclients 8 +map q2dm1
+```
+
+`maxclients` is the number of players, bots included; the bots allow at most 64. Add `+set ctf 1` for Capture the Flag on a `q2ctf` map, `+set xatrix 1` or `+set rogue 1` for a mission pack, and `+set rocketarena 1` for Rocket Arena. In the game, add and remove bots in the console:
+
+| Command | What it does |
+|---|---|
+| `menu` | opens a menu to add and remove bots |
+| `addrandom 3` | adds three bots, picked at random from `bots.cfg` |
+| `addbot Sarge sarge/default bots/sarge_c.c sarge` | adds one bot: name, player model/skin, character file and character name, as in the lines of `bots.cfg` |
+| `removebot Sarge` | removes this bot; `removebot` alone removes any one |
+| `set minimumplayers 6` | keeps 6 players in the game: adds bots while there are fewer, and removes them as people join (not in Rocket Arena) |
+| `set bot_skill 2` | how well the bots play, from 1 to 5 (default 4); set it before adding them |
+
+On the console of a dedicated server, the bot commands take `sv` in front (`sv addrandom 3`), and `set serveronlybotcmds 1` keeps players from adding and removing bots.
+
+If no bot joins and the console says `botlib.so not available` (`botlib.dll` on Windows), the lines above it tell why:
+
+- `can't open maps/q2dm1.aas`: the map has no navigation file yet.
+- `aas file maps/q2dm1.aas is version 3, not 5`: the file is the Gladiator Bot's. Make a new one with `bspc`.
+- `this bot library supports at most 64 clients`: lower `maxclients`.
+
+The bot library writes a log, `botlib.log`, into the directory Quake II was started from (`set log 0` before adding bots turns it off).
+
+### For game and mod developers
+
+`make botlib bspc` builds just the bot library and `bspc`, all that a game that embeds the bot needs. Give `CFLAGS` and `LDFLAGS` in the environment, not on make's command line: the Makefile adds `-fPIC` and `-shared` to them per target, and make drops such additions to a variable set on its command line. A cross build has to name its target, because the Makefile otherwise builds for the machine it runs on: `make YQ2_OSTYPE=Windows YQ2_ARCH=i386 CC=i686-w64-mingw32-gcc botlib bspc` (`YQ2_ARCH=x86_64` and `CC=x86_64-w64-mingw32-gcc` for 64-bit Windows).
+
+The bot library is loaded the way the Gladiator Bot's was. The game opens it, looks up `GetBotAPI` and calls it with a `bot_import_t`, the functions the bot calls in the game, and gets back a `bot_export_t`, the bot's functions for the game. [botlib/be_interface_q2.h](./botlib/be_interface_q2.h) declares both. They are the Gladiator Bot's tables, so a game written for its library loads this one unchanged; the export table's entries after Gladiator's twenty are this library's own. The structs the tables pass hold no pointers, so they are the same in 32-bit and 64-bit builds, and the header checks their sizes when it is compiled.
+
+- **Calling convention.** `GetBotAPI` is a plain C (`__cdecl`) function on every platform, 32-bit Windows included, like the one in Gladiator's `gladiator.dll`. The 1999 Gladiator game source calls it through a `WINAPI` (`__stdcall`) pointer, which leaves the stack four bytes off with either library unless the calling function keeps a frame pointer. Declare the pointer plain, as [game_q2/bl_main.c](./game_q2/bl_main.c) does.
+- **Running beside Gladiator's bot library**, as [Colosseum](https://github.com/Niehztog/colosseum) does:
+  - `GetBotAPI` is the only symbol the library exports. Everything else is hidden, so neither library's functions can bind to the other's of the same name.
+  - `BotVersion()` tells the two apart: this one returns `Q3Backport-` and its version (now `Q3Backport-0.2`), Gladiator's `BotLib v0.96`.
+  - Both use the same file names (`maps/<map>.aas`, `botfiles/bots/...`) in different formats. When the game sets the library variable `datadir` (with `BotLibVarSet`, before `BotSetupLibrary`), this library reads and writes its bot files, AAS files and route caches only under `<basedir>/<gamedir>/<datadir>/`. Only the map itself, which it reads from the game's directories and pak files, and `botlib.log`, which goes to the working directory, are elsewhere. Without `datadir`, it searches the game directory, `baseq2` and their pak files, and last the layout of Gladiator's `pak7.pak`, where it can come across Gladiator's files.
+- **Limits.** `BotSetupLibrary` refuses a `maxclients` above 64, the size of the library's client tables. Entities numbered 1022 and up are left out of what the bots see, because Quake III's entity numbers end there.
+- **Skill.** `bot_skill` (1 to 5) is read for each bot in `BotSetupClient`, so a game that sets it before each bot can give every bot its own. This repository's game sets it once, when the library loads.
+- **Teams** follow the library variables `ctf`, `teamplay` and `dmflags` (teams by skin or by model), as with Gladiator's library. Rocket Arena (`ra`) alone is no team game: a game whose arenas play in teams sets `teamplay` or the team `dmflags`.
+- **AAS files** are Quake III's, version 5, made with this repository's `bspc`. Gladiator's version-3 files are refused.
+
 ## Player models
 
 The bots appear as their Quake III Arena characters: `bots.cfg` gives each bot the player model and skin that Quake III's `scripts/bots.txt` gives it (`sarge/default`, `biker/cadavre`, ...), and Team Arena's for Fritzkrieg and pi. These models are part of Quake III Arena and Team Arena and are not included here. Convert them from your own copies of the games with [q3player2md2](https://github.com/Niehztog/q3player2md2) and copy what it writes to `out/players/` into `baseq2/players/` of every Quake II installation that plays with the bots. Given the mission packs' data, it also puts their weapons in the players' hands:

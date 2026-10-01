@@ -179,194 +179,9 @@ extern int maxclients;
 #define Q3TEAM_RED    1
 #define Q3TEAM_BLUE   2
 
-/* ====================================================================
- * Q2 bot API types (from gladq2_src/botlib.h)
- *
- * Defined here to avoid pulling in game_q2/q_shared.h, which would
- * conflict with game_q3/q_shared.h.  The structs are laid out to be
- * binary-compatible with gladq2_src/botlib.h.
- * ==================================================================== */
-
-/* Error codes */
-#define Q2_BLERR_NOERROR                 0
-#define Q2_BLERR_LIBRARYNOTSETUP         1
-#define Q2_BLERR_LIBRARYALREADYSETUP     2
-#define Q2_BLERR_INVALIDCLIENTNUMBER     3
-#define Q2_BLERR_INVALIDENTITYNUMBER     4
-#define Q2_BLERR_AICLIENTNOTSETUP        19
-#define Q2_BLERR_AICLIENTALREADYSETUP    20
-#define Q2_BLERR_AIMOVEINACTIVECLIENT    21
-#define Q2_BLERR_AIMOVETOACTIVECLIENT    22
-#define Q2_BLERR_AICLIENTALREADYSHUTDOWN 23
-#define Q2_BLERR_AIUPDATEINACTIVECLIENT  24
-#define Q2_BLERR_AICMFORINACTIVECLIENT   25
-#define Q2_BLERR_SETTINGSINACTIVECLIENT  26
-
-#define Q2_MAX_NETNAME        16
-#define Q2_MAX_CLIENTSKINNAME 128
-#define Q2_MAX_FILEPATH       144
-#define Q2_MAX_CHARACTERNAME  144
-
-/* Q2 action flag bit positions (differ from Q3) */
-#define Q2_ACTION_ATTACK      1
-#define Q2_ACTION_USE         2
-#define Q2_ACTION_RESPAWN     4
-#define Q2_ACTION_JUMP        8     /* same bit as MOVEUP */
-#define Q2_ACTION_MOVEUP      8
-#define Q2_ACTION_CROUCH      16    /* same bit as MOVEDOWN */
-#define Q2_ACTION_MOVEDOWN    16
-#define Q2_ACTION_MOVEFORWARD 32
-#define Q2_ACTION_MOVEBACK    64
-#define Q2_ACTION_MOVELEFT    128
-#define Q2_ACTION_MOVERIGHT   256
-#define Q2_ACTION_DELAYEDJUMP 512
-
-#define Q2_MAX_STATS   32
-#define Q2_MAX_ITEMS   256
-
-/* Q2 pmtype (must match game_q2/q_shared.h enum order) */
-typedef enum {
-    Q2PM_NORMAL,
-    Q2PM_SPECTATOR,
-    Q2PM_DEAD,
-    Q2PM_GIB,
-    Q2PM_FREEZE
-} q2_pmtype_t;
-
-typedef struct q2_bot_settings_s {
-    char characterfile[Q2_MAX_FILEPATH];
-    char charactername[Q2_MAX_CHARACTERNAME];
-    char ailibrary[Q2_MAX_FILEPATH];
-} q2_bot_settings_t;
-
-typedef struct q2_bot_clientsettings_s {
-    char netname[Q2_MAX_NETNAME];
-    char skin[Q2_MAX_CLIENTSKINNAME];
-} q2_bot_clientsettings_t;
-
-typedef struct q2_bot_input_s {
-    float   thinktime;
-    vec3_t  dir;
-    float   speed;
-    vec3_t  viewangles;
-    int     actionflags;
-} q2_bot_input_t;
-
-typedef struct q2_bot_updateclient_s {
-    q2_pmtype_t pm_type;
-    vec3_t  origin;
-    vec3_t  velocity;
-    byte    pm_flags;
-    byte    pm_time;
-    float   gravity;
-    vec3_t  delta_angles;
-    vec3_t  viewangles;
-    vec3_t  viewoffset;
-    vec3_t  kick_angles;
-    vec3_t  gunangles;
-    vec3_t  gunoffset;
-    int     gunindex;
-    int     gunframe;
-    float   blend[4];
-    float   fov;
-    int     rdflags;
-    short   stats[Q2_MAX_STATS];
-    int     inventory[Q2_MAX_ITEMS];
-} q2_bot_updateclient_t;
-
-typedef struct q2_bot_updateentity_s {
-    vec3_t  origin;
-    vec3_t  angles;
-    vec3_t  old_origin;
-    vec3_t  mins;
-    vec3_t  maxs;
-    int     solid;
-    int     modelindex;
-    int     modelindex2, modelindex3, modelindex4;
-    int     frame;
-    int     skinnum;
-    int     effects;
-    int     renderfx;
-    int     sound;
-    int     event;
-} q2_bot_updateentity_t;
-
-typedef struct q2_bot_import_s {
-    void        (*BotInput)(int client, q2_bot_input_t *bi);
-    void        (*BotClientCommand)(int client, char *str, ...);
-    void        (*Print)(int type, char *fmt, ...);
-    bsp_trace_t (*Trace)(vec3_t start, vec3_t mins, vec3_t maxs,
-                          vec3_t end, int passent, int contentmask);
-    int         (*PointContents)(vec3_t point);
-    void       *(*GetMemory)(int size);
-    void        (*FreeMemory)(void *ptr);
-    int         (*DebugLineCreate)(void);
-    void        (*DebugLineDelete)(int line);
-    void        (*DebugLineShow)(int line, vec3_t start, vec3_t end, int color);
-} q2_bot_import_t;
-/* That is all of Gladiator's import table (game_q2/botlib.h bot_import_t).
- * GetBotAPI copies a game's table whole: an entry beyond it would read
- * whatever follows the table in a Gladiator game. The PVS and the teams
- * come from the map (Q3inPVS_Adapter) and the skins (Q2_ClientsOnSameTeam)
- * instead, as they did for Gladiator's botlib. */
-
-typedef struct q2_bot_export_s {
-    char *(*BotVersion)(void);
-    int  (*BotSetupLibrary)(void);
-    int  (*BotShutdownLibrary)(void);
-    int  (*BotLibraryInitialized)(void);
-    int  (*BotLibVarSet)(char *var_name, char *value);
-    int  (*BotDefine)(char *string);
-    int  (*BotLoadMap)(char *mapname, int modelindexes, char *modelindex[],
-                        int soundindexes, char *soundindex[],
-                        int imageindexes, char *imageindex[]);
-    int  (*BotSetupClient)(int client, q2_bot_settings_t *settings);
-    int  (*BotShutdownClient)(int client);
-    int  (*BotMoveClient)(int oldclnum, int newclnum);
-    int  (*BotClientSettings)(int client, q2_bot_clientsettings_t *settings);
-    int  (*BotSettings)(int client, q2_bot_settings_t *settings);
-    int  (*BotStartFrame)(float time);
-    int  (*BotUpdateClient)(int client, q2_bot_updateclient_t *buc);
-    int  (*BotUpdateEntity)(int ent, q2_bot_updateentity_t *bue);
-    int  (*BotAddSound)(vec3_t origin, int ent, int channel, int soundindex,
-                         float volume, float attenuation, float timeofs);
-    int  (*BotAddPointLight)(vec3_t origin, int ent, float radius,
-                              float r, float g, float b, float time, float decay);
-    int  (*BotAI)(int client, float thinktime);
-    int  (*BotConsoleMessage)(int client, int type, char *message);
-    int  (*Test)(int parm0, char *parm1, vec3_t parm2, vec3_t parm3);
-    /* AAS debug visualization */
-    void (*AAS_ShowAreaFunc)(int areanum);
-    void (*AAS_ShowReachableAreasFunc)(int areanum);
-    void (*AAS_ClearShownDebugLinesFunc)(void);
-    int  (*AAS_PointAreaNumFunc)(vec3_t point);
-    int  (*AAS_AreaCenterFunc)(int areanum, vec3_t center);
-    /* Chat functions (Q3 botlib API exposed to game DLL) */
-    void (*BotInitialChatFunc)(int chatstate, char *type, int mcontext,
-             char *var0, char *var1, char *var2, char *var3,
-             char *var4, char *var5, char *var6, char *var7);
-    void (*BotEnterChatFunc)(int chatstate, int clientto, int sendto);
-    int  (*BotNumInitialChatsFunc)(int chatstate, char *type);
-    int  (*BotChatLengthFunc)(int chatstate);
-    float (*BotCharacterBFloat)(int character, int index, float min, float max);
-    int  (*BotCharacterBInteger)(int character, int index, int min, int max);
-    /* Death/kill notification (game DLL -> botlib) */
-    void (*BotNotifyDeath)(int client, int killer, int mod);
-    void (*BotNotifyKill)(int client, int victim, int mod);
-    /* Query per-bot handles */
-    int  (*BotGetChatState)(int client);
-    int  (*BotGetCharacter)(int client);
-    int  (*BotGetEnemy)(int client);
-    /* Chat cooldown access */
-    float (*BotGetLastChatTime)(int client);
-    void  (*BotSetLastChatTime)(int client, float time);
-    /* Console message queue (for chat reply) */
-    int  (*BotNextConsoleMessageFunc)(int chatstate, bot_consolemessage_t *cm);
-    int  (*BotReplyChatFunc)(int chatstate, char *message, int mcontext, int vcontext,
-             char *var0, char *var1, char *var2, char *var3,
-             char *var4, char *var5, char *var6, char *var7);
-    void (*BotRemoveConsoleMessageFunc)(int chatstate, int handle);
-} q2_bot_export_t;
+/* The Quake II bot library interface (q2_bot_import_t, q2_bot_export_t and
+ * the structs they pass) is be_interface_q2.h. */
+#include "be_interface_q2.h"
 
 /* Character indices (from ioq3/code/game/chars.h) */
 #define Q2CHAR_GENDER              1
@@ -1130,9 +945,11 @@ static int Q3_FS_FOpenFile(const char *qpath, fileHandle_t *file, fsMode_t mode)
     char        path[512];
     const char *basedir = LibVarGetString("basedir");
     const char *gamedir = LibVarGetString("gamedir");
+    const char *datadir = LibVarGetString("datadir");
     const char *modestr;
-    FILE       *f;
+    FILE       *f = NULL;
     int         handle, filesize;
+    int         pak_base = 0, pak_size = -1;
 
     switch (mode) {
     case FS_WRITE:       modestr = "wb"; break;
@@ -1141,23 +958,35 @@ static int Q3_FS_FOpenFile(const char *qpath, fileHandle_t *file, fsMode_t mode)
     default:             modestr = "rb"; break;
     }
 
-    if (gamedir[0])
-        Com_sprintf(path, sizeof(path), "%s/%s/%s", basedir, gamedir, qpath);
-    else
-        Com_sprintf(path, sizeof(path), "%s/baseq2/%s", basedir, qpath);
-
-    f = fopen(path, modestr);
-    if (!f && gamedir[0]) {
-        /* fallback: baseq2 loose file */
-        Com_sprintf(path, sizeof(path), "%s/baseq2/%s", basedir, qpath);
+    if (datadir[0]) {
+        /* A game that names a data directory ("datadir", relative to the
+         * game directory) keeps every file of this library in it: the
+         * botfiles, the AAS files and the routing caches, read and written
+         * alike. Nothing is looked for anywhere else -- not in baseq2, not
+         * in a pak, and not in Gladiator's pak7.pak layout below -- so a
+         * game that also runs Gladiator's botlib, whose files have the same
+         * names (maps/<map>.aas, items.c, weapons.c, bots/...) in another
+         * format, can never hand this library one of them. */
+        Com_sprintf(path, sizeof(path), "%s/%s/%s/%s", basedir,
+                    gamedir[0] ? gamedir : "baseq2", datadir, qpath);
         f = fopen(path, modestr);
     }
+    else {
+        if (gamedir[0])
+            Com_sprintf(path, sizeof(path), "%s/%s/%s", basedir, gamedir, qpath);
+        else
+            Com_sprintf(path, sizeof(path), "%s/baseq2/%s", basedir, qpath);
 
-    /* For read-only access, also search pak archives (e.g. bots/byte_c.c
-     * in pak7.pak).  The pak FILE* is stored open; reads are bounded to the
-     * entry range by Q3_FS_Read/Seek — no tmpfile or heap copy needed. */
-    {
-        int pak_base = 0, pak_size = -1;
+        f = fopen(path, modestr);
+        if (!f && gamedir[0]) {
+            /* fallback: baseq2 loose file */
+            Com_sprintf(path, sizeof(path), "%s/baseq2/%s", basedir, qpath);
+            f = fopen(path, modestr);
+        }
+
+        /* For read-only access, also search pak archives (e.g. bots/byte_c.c
+         * in pak7.pak).  The pak FILE* is stored open; reads are bounded to the
+         * entry range by Q3_FS_Read/Seek — no tmpfile or heap copy needed. */
         if (!f && mode == FS_READ) {
             if (gamedir[0]) {
                 Com_sprintf(path, sizeof(path), "%s/%s", basedir, gamedir);
@@ -1192,23 +1021,23 @@ static int Q3_FS_FOpenFile(const char *qpath, fileHandle_t *file, fsMode_t mode)
                 }
             }
         }
-        if (!f) { *file = 0; return -1; }
-
-        for (handle = 1; handle < MAX_Q2_FS_FILES; handle++) {
-            if (!fs_files[handle].file) break;
-        }
-        if (handle >= MAX_Q2_FS_FILES) { fclose(f); *file = 0; return -1; }
-
-        fs_files[handle].file = f;
-        fs_files[handle].base = pak_base;
-        fs_files[handle].size = pak_size;
-        fs_files[handle].pos  = 0;
-        filesize = (pak_size >= 0) ? pak_size
-                                   : (fseek(f, 0, SEEK_END), (int)ftell(f));
-        if (pak_size < 0) fseek(f, 0, SEEK_SET);
-        *file = handle;
-        return filesize;
     }
+    if (!f) { *file = 0; return -1; }
+
+    for (handle = 1; handle < MAX_Q2_FS_FILES; handle++) {
+        if (!fs_files[handle].file) break;
+    }
+    if (handle >= MAX_Q2_FS_FILES) { fclose(f); *file = 0; return -1; }
+
+    fs_files[handle].file = f;
+    fs_files[handle].base = pak_base;
+    fs_files[handle].size = pak_size;
+    fs_files[handle].pos  = 0;
+    filesize = (pak_size >= 0) ? pak_size
+                               : (fseek(f, 0, SEEK_END), (int)ftell(f));
+    if (pak_size < 0) fseek(f, 0, SEEK_SET);
+    *file = handle;
+    return filesize;
 }
 
 static int Q3_FS_Read(void *buffer, int len, fileHandle_t h)
@@ -1340,7 +1169,7 @@ static int Q3ActionsToQ2(int q3)
 
 static char *Q2BotVersion(void)
 {
-    return "Q3Backport-0.1";
+    return "Q3Backport-0.2";
 }
 
 /* Q3's AI cvars (game_q3/ai_dmq3.c), refreshed every frame in Q2BotStartFrame
@@ -1350,7 +1179,30 @@ void trap_Cvar_Update(vmCvar_t *cv);
 
 static int Q2BotSetupLibrary(void)
 {
-    int errnum;
+    int errnum, maxclients;
+    char buf[16];
+
+    /* Every per-client table of this library -- the Q3 AI's botstates[],
+     * the adapter's and the shim's (ai_q2_shim.c) -- has MAX_CLIENTS (64)
+     * rows, and a Quake II server numbers its clients up to its maxclients,
+     * which can be 256. Refuse such a game here, where the game can still
+     * say so, rather than index past those tables when the 65th client
+     * connects. The game set "maxclients" in BotInitLibrary, before this. */
+    maxclients = (int)LibVarGetValue("maxclients");
+    if (maxclients > MAX_CLIENTS) {
+        botimport.Print(PRT_ERROR, "this bot library supports at most %d "
+                        "clients, and maxclients is %d\n", MAX_CLIENTS, maxclients);
+        return Q2_BLERR_INVALIDCLIENTNUMBER;
+    }
+
+    /* The entity numbers this library works with are Quake III's: clients
+     * from 0, the world at ENTITYNUM_WORLD (1022), nothing at or above
+     * ENTITYNUM_MAX_NORMAL otherwise (Q2BotUpdateEntity). Its entity tables
+     * are sized for that space whatever the game's maxentities is -- a
+     * smaller one had no slot for the world, a larger one only rows no
+     * entity can reach. */
+    Com_sprintf(buf, sizeof(buf), "%d", MAX_GENTITIES);
+    LibVarSet("maxentities", buf);
 
     /* Room for 512 level items, the default of Gladiator's botlib
      * (be_ai_goal.c); Q3's is 256. rdm11 has 256 items in deathmatch, and
@@ -1372,6 +1224,10 @@ static int Q2BotSetupLibrary(void)
 
 static int Q2BotShutdownLibrary(void)
 {
+    /* A game unloads a library whose setup failed (Q2BotSetupLibrary's
+     * refusal, say) by shutting it down: say nothing more about it. */
+    if (!botlibglobals.botlibsetup)
+        return Q2_BLERR_LIBRARYNOTSETUP;
     return Export_BotLibShutdown();
 }
 
@@ -1419,10 +1275,16 @@ static int Q2BotDefine(char *string)
 }
 
 /* Shared by Q2BotStartFrame (every frame) and Q2BotLoadMap (once, right
- * before BotSetupDeathmatchAI needs a correct answer -- see there). The
- * game DLL sets "ctf"/"teamplay"/"arena" LibVars at init time; there is
- * no real Q2 concept named "g_gametype" so this derives Q3's numbering
- * from them. */
+ * before BotSetupDeathmatchAI needs a correct answer -- see there). There
+ * is no real Q2 concept named "g_gametype", so this derives Q3's numbering
+ * from the game DLL's "ctf", "teamplay" and "dmflags" LibVars. Rocket
+ * Arena's "ra" is not one of them: the Gladiator game's arenas play in
+ * teams by DF_SKINTEAMS or DF_MODELTEAMS like any deathmatch
+ * (game_q2/g_arena.c) and are free-for-all without them, a game whose
+ * arenas always play in teams sets "teamplay" (Colosseum does), and
+ * Gladiator's botlib never reads "ra" either. Taken for GT_TEAM, a
+ * free-for-all arena would have every bot ask all players for a team
+ * leader and keep its deathmatch chats to itself. */
 /* The switches of Gladiator's team rules (Q2_ClientsOnSameTeam), read with
  * the gametype below */
 #define Q2_DF_SKINTEAMS     64
@@ -1434,7 +1296,6 @@ static void Q2UpdateGametypeLibVar(void)
 {
     float ctf_val = LibVarGetValue("ctf");
     float tp_val  = LibVarGetValue("teamplay");
-    float ar_val  = LibVarGetValue("arena");
     /* Q2 deathmatch plays in teams with DF_SKINTEAMS (64) or DF_MODELTEAMS
      * (128) (game_q2/q_shared.h); the game sends "dmflags" every frame
      * (game_q2/bl_main.c BotLib_BotStartFrame). Q2_ClientsOnSameTeam, which
@@ -1448,7 +1309,7 @@ static void Q2UpdateGametypeLibVar(void)
     q2_team_dmflags  = dmflags;
     if (ctf_val)
         LibVarSet("g_gametype", "4"); /* GT_CTF */
-    else if (tp_val || ar_val || (dmflags & (64 | 128)))
+    else if (tp_val || (dmflags & (64 | 128)))
         LibVarSet("g_gametype", "3"); /* GT_TEAM */
     else
         LibVarSet("g_gametype", "0"); /* GT_FFA */
@@ -1943,8 +1804,8 @@ static int Q2BotStartFrame(float time)
      * real Q3 does, not a guess. */
     floattime = AAS_Time();
 
-    /* Update gametype for CTF/team detection.  The game DLL sets
-     * "ctf", "teamplay", and "arena" LibVars at init time. */
+    /* Update gametype for CTF/team detection from the game's "ctf",
+     * "teamplay" and "dmflags" LibVars. */
     Q2UpdateGametypeLibVar();
 
     /* The Q3 AI's game state: this frame's entity updates follow
@@ -2211,6 +2072,14 @@ static int Q2BotUpdateEntity(int ent, q2_bot_updateentity_t *bue)
 {
     bot_entitystate_t state;
 
+    /* An edict numbered ENTITYNUM_MAX_NORMAL (1022) or above has no Quake
+     * III entity number: the next two are the world and "none", and the
+     * tables end after them (Q2BotSetupLibrary). A game with that many
+     * edicts in use -- maxentities defaults to 1024, and can be raised --
+     * leaves those out of what the bots see instead of overwriting the
+     * world with them. Clients are numbered from 1 and never get here. */
+    if (ent >= ENTITYNUM_MAX_NORMAL)
+        return Q2_BLERR_NOERROR;
     if (!ValidEntityNumber(ent, "BotUpdateEntity"))
         return Q2_BLERR_INVALIDENTITYNUMBER;
     if (ent >= 1 && ent <= q2_maxclients) {
@@ -2881,14 +2750,14 @@ static int Q2BotReplyChat(int chatstate, char *message, int mcontext, int vconte
  *   3. Call GetBotLibAPI to initialise the Q3 botlib and set botimport.
  *   4. Fill out and return the Q2 bot_export_t.
  * ==================================================================== */
-/* On 32-bit Windows the game DLL declares the function pointer as WINAPI
- * (__stdcall).  We must match that calling convention or the stack is
- * corrupted on return (ESP off by 4 → immediate crash). */
-#if defined(_WIN32) && !defined(_WIN64)
-__declspec(dllexport) q2_bot_export_t * __stdcall GetBotAPI(q2_bot_import_t *import)
-#else
-q2_bot_export_t *GetBotAPI(q2_bot_import_t *import)
-#endif
+/* A plain C function on every target, 32-bit Windows included -- see
+ * be_interface_q2.h. This used to be __stdcall there, to match the WINAPI
+ * pointer Gladiator's 1999 game source declares. That pointer was never
+ * what the real gladiator.dll answered to (its GetBotAPI ends in a plain
+ * `ret`), the 1999 game got away with the mismatch, and a game that calls
+ * the function the way Gladiator's library is called -- __cdecl -- was off
+ * by four bytes of stack on return from this one. */
+Q2_BOTLIB_EXPORT q2_bot_export_t *GetBotAPI(q2_bot_import_t *import)
 {
     botlib_import_t q3imp;
 
