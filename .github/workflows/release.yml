@@ -68,11 +68,14 @@ jobs:
           cp release/game/game.so     q3bot/
           cp release/botlib/botlib.so q3bot/
           cp release/bspc/bspc        q3bot/
+          cp LICENSE README.md        q3bot/
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
           # the game reads the bot list from the mod directory itself
           mv q3bot/botfiles/bots.cfg q3bot/
+          # bspc -output writes the AAS files here but does not create the directory
+          mkdir q3bot/maps
           tar -czf q3a-bot-backport-linux-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload Linux artifact
@@ -123,6 +126,7 @@ jobs:
           Copy-Item release\game\game.dll     q3bot
           Copy-Item release\botlib\botlib.dll q3bot
           Copy-Item release\bspc\bspc.exe     q3bot
+          Copy-Item LICENSE, README.md        q3bot
 
           Get-ChildItem assets -Force | ForEach-Object {
             Copy-Item $_.FullName -Destination q3bot -Recurse -Force
@@ -130,6 +134,9 @@ jobs:
 
           # the game reads the bot list from the mod directory itself
           Move-Item q3bot\botfiles\bots.cfg q3bot
+
+          # bspc -output writes the AAS files here but does not create the directory
+          New-Item -ItemType Directory -Path q3bot\maps | Out-Null
 
           Compress-Archive -Path q3bot -DestinationPath q3a-bot-backport-windows-${{ matrix.arch }}.zip -Force
 
@@ -170,11 +177,14 @@ jobs:
           cp release/game/game.dylib     q3bot/
           cp release/botlib/botlib.dylib q3bot/
           cp release/bspc/bspc           q3bot/
+          cp LICENSE README.md           q3bot/
           for f in assets/*; do
             cp -r "$f" q3bot/
           done
           # the game reads the bot list from the mod directory itself
           mv q3bot/botfiles/bots.cfg q3bot/
+          # bspc -output writes the AAS files here but does not create the directory
+          mkdir q3bot/maps
           tar -czf q3a-bot-backport-macos-${{ matrix.arch }}.tar.gz q3bot
 
       - name: Upload macOS artifact
