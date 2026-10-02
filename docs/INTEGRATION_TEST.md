@@ -168,6 +168,10 @@ addbot BotName male/flak bots/default_c.c defaultbot
 The game queues the bot and calls `GetBotAPI` → `BotSetupLibrary` →
 `BotLoadMap` → `BotSetupClient` in sequence.
 
+All bots get the skill in `bot_skill` (1–5, default 4). The botlib reads it
+when it loads with the first bot, and the cvar only exists from then on, so
+set it beforehand with `set bot_skill 2`; a bare `bot_skill 2` becomes chat.
+
 ---
 
 ## 6. What to observe

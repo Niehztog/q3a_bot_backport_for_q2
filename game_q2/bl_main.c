@@ -1043,7 +1043,11 @@ void BotUnloadLibrary(bot_library_t *lib)
 //===========================================================================
 #if defined(WIN32) || defined(_WIN32)
 
-typedef bot_export_t *(WINAPI *PFNGetBotAPI)(bot_import_t *import);
+//GetBotAPI is a plain __cdecl function: the real gladiator.dll returns from
+//it with a plain `ret`, and so does botlib.dll. The WINAPI (__stdcall)
+//pointer this used to be only worked against code built with a frame
+//pointer, which never noticed the four bytes of stack left behind.
+typedef bot_export_t *(*PFNGetBotAPI)(bot_import_t *import);
 
 bot_library_t *BotLoadLibrary(char *botlibdir)
 {
