@@ -1223,12 +1223,16 @@ int LoadMapFromBSP(struct quakefile_s *qf)
 	else if (idheader.ident == Q2_BSPHEADER && idheader.version == Q2_BSPVERSION)
 	{
 		//Q2 player bbox is 32x32 (-16 to 16), Q3 default is 30x30 (-15 to 15).
+		//Q2 crouches to a top of 4 (pmove.c PM_CheckDuck), Q3 to 16: with
+		//Q3's, every space 28 to 40 units high was solid to the bots.
+		//Gladiator's AAS files have Q2's boxes too.
 		//Must be set before map loading because AAS_CreateMapBrushes
 		//expands brushes by the player bbox during the load pass.
 		cfg.bboxes[0].mins[0] = cfg.bboxes[0].mins[1] = -16;
 		cfg.bboxes[0].maxs[0] = cfg.bboxes[0].maxs[1] = 16;
 		cfg.bboxes[1].mins[0] = cfg.bboxes[1].mins[1] = -16;
 		cfg.bboxes[1].maxs[0] = cfg.bboxes[1].maxs[1] = 16;
+		cfg.bboxes[1].maxs[2] = 4;
 		ResetMapLoading();
 		Q2_AllocMaxBSP();
 		Q2_LoadMapFromBSP(qf->filename, qf->offset, qf->length);

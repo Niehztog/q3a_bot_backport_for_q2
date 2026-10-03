@@ -74,9 +74,10 @@ void AAS_PresenceTypeBoundingBox(int presencetype, vec3_t mins, vec3_t maxs)
 {
 	int index;
 	//bounding box size for each presence type
-	//Q2 player bbox is 32x32 (-16 to 16), not Q3's 30x30 (-15 to 15)
+	//Q2 player bbox is 32x32 (-16 to 16), not Q3's 30x30 (-15 to 15),
+	//and crouched its top is 4 (bspc/map.c)
 	vec3_t boxmins[3] = {{0, 0, 0}, {-16, -16, -24}, {-16, -16, -24}};
-	vec3_t boxmaxs[3] = {{0, 0, 0}, { 16,  16,  32}, { 16,  16,   8}};
+	vec3_t boxmaxs[3] = {{0, 0, 0}, { 16,  16,  32}, { 16,  16,   4}};
 
 	if (presencetype == PRESENCE_NORMAL) index = 1;
 	else if (presencetype == PRESENCE_CROUCH) index = 2;
