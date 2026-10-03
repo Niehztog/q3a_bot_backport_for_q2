@@ -1269,6 +1269,9 @@ static int Q2BotSetupLibrary(void)
     errnum = Export_BotLibSetup();
     if (errnum != BLERR_NOERROR)
         return errnum;
+    /* the chat files are loaded now: the Q3 AI's game state forgets the
+     * answers it kept from any it had before (ai_q2_shim.c) */
+    Q2Shim_Reset();
     /* the game set "maxclients" in BotInitLibrary, before this */
     q2_maxclients = (int)LibVarGetValue("maxclients");
     /* Q3's own AI setup (game_q3/ai_main.c): registers the ai_main.c cvars.
@@ -1285,6 +1288,8 @@ static int Q2BotShutdownLibrary(void)
      * refusal, say) by shutting it down: say nothing more about it. */
     if (!botlibglobals.botlibsetup)
         return Q2_BLERR_LIBRARYNOTSETUP;
+    /* and with the chat files gone, so are the answers kept from them */
+    Q2Shim_Reset();
     return Export_BotLibShutdown();
 }
 
