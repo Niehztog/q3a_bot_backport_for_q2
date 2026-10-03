@@ -350,6 +350,17 @@ static int		q2shim_snapshot[MAX_GENTITIES];
 static int		q2shim_snapshotcount;
 static int		q2shim_snapshotclient = -1;
 
+/* Each entity's PVS cluster (be_interface_q2.c Q2_PointCluster), taken where
+ * its origin is set -- Q2Shim_UpdateEntity and Q2Shim_TempEvent are the only
+ * two places that set it -- so a snapshot walks the BSP tree once for the
+ * eye of its bot instead of twice for every entity. And the highest entity
+ * number the game sent this frame: below the temporary events nothing above
+ * it is in use, and the snapshot need not look there. */
+static int		q2shim_cluster[MAX_GENTITIES];
+static int		q2shim_lastentity = -1;
+extern int Q2_PointCluster(vec3_t p);
+extern int Q2_ClustersVisible(int cluster1, int cluster2);
+
 /* The powerups whose respawn Q3 announces to everyone with
  * "sound/items/poweruprespawn.wav" (items of type IT_POWERUP there): the Q2
  * and mission pack ones in their role. BotGoForPowerups (ai_dmq3.c) stops
@@ -373,6 +384,7 @@ void Q2Shim_Reset(void)
 	Com_Memset(q2shim_tempexpire, 0, sizeof(q2shim_tempexpire));
 	q2shim_lastframetime = 0;
 	q2shim_snapshotclient = -1;
+	q2shim_lastentity = -1;
 }
 
 /* What the game told of the last damage a client took (be_interface_q2.c
@@ -408,6 +420,7 @@ void Q2Shim_StartFrame(void)
 		g_entities_compat[i].inuse = false;
 		g_entities_compat[i].r.linked = false;
 	}
+	q2shim_lastentity = -1;
 	for (i = 0; i < Q2SHIM_TEMPENTITIES; i++) {
 		if (q2shim_tempexpire[i] <= now) {
 			g_entities_compat[Q2SHIM_FIRSTTEMP + i].inuse = false;
@@ -438,6 +451,7 @@ static gentity_t *Q2Shim_TempEvent(int event, vec3_t origin, int broadcast)
 		VectorCopy(origin, ent->r.currentOrigin);
 		VectorCopy(origin, ent->s.pos.trBase);
 	}
+	q2shim_cluster[Q2SHIM_FIRSTTEMP + slot] = Q2_PointCluster(ent->r.currentOrigin);
 	ent->eventTime = ++q2shim_eventtime;
 	q2shim_tempexpire[slot] = AAS_Time() + EVENT_VALID_MSEC * 0.001f;
 	return ent;
@@ -504,6 +518,9 @@ void Q2Shim_UpdateEntity(int q2ent, int type, int eflags, int powerups,
 	ent->r.linked = true;
 	ent->r.svFlags = bs ? SVF_BOT : 0;
 	VectorCopy(origin, ent->r.currentOrigin);
+	q2shim_cluster[num] = Q2_PointCluster(ent->r.currentOrigin);
+	if (num > q2shim_lastentity)
+		q2shim_lastentity = num;
 	VectorCopy(mins, ent->r.mins);
 	VectorCopy(maxs, ent->r.maxs);
 	ent->s.number = num;
@@ -543,13 +560,14 @@ void Q2Shim_UpdateEntity(int q2ent, int type, int eflags, int powerups,
 }
 
 /* Q3's snapshot of a client: the entities in the PVS of its view, and the
- * broadcast ones, never its own. BotCheckSnapshot asks for sequence 0 first. */
+ * broadcast ones, never its own, in the order of their numbers.
+ * BotCheckSnapshot asks for sequence 0 first. */
 static void Q2Shim_BuildSnapshot(int clientNum)
 {
 	bot_state_t *bs = NULL;
 	gentity_t *ent;
 	vec3_t eye;
-	int i;
+	int i, eyecluster;
 
 	q2shim_snapshotcount = 0;
 	q2shim_snapshotclient = clientNum;
@@ -559,12 +577,17 @@ static void Q2Shim_BuildSnapshot(int clientNum)
 		return;
 	VectorCopy(bs->cur_ps.origin, eye);
 	eye[2] += bs->cur_ps.viewheight;
+	eyecluster = Q2_PointCluster(eye);
 	for (i = 0; i < MAX_GENTITIES; i++) {
+		/* the game's entities, then the temporary events */
+		if (i > q2shim_lastentity && i < Q2SHIM_FIRSTTEMP)
+			i = Q2SHIM_FIRSTTEMP;
 		ent = &g_entities_compat[i];
 		if (!ent->inuse || !ent->r.linked) continue;
 		if (ent->r.svFlags & SVF_NOCLIENT) continue;
 		if (i == clientNum) continue;
-		if (!(ent->r.svFlags & SVF_BROADCAST) && !botimport.inPVS(eye, ent->r.currentOrigin))
+		if (!(ent->r.svFlags & SVF_BROADCAST) &&
+			!Q2_ClustersVisible(eyecluster, q2shim_cluster[i]))
 			continue;
 		q2shim_snapshot[q2shim_snapshotcount++] = i;
 	}

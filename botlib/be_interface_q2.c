@@ -801,26 +801,57 @@ static void Q2_BSPClusterPVS(int cluster)
  * cluster (in solid) sees nothing and is seen by nothing, a map without
  * visibility data sees everything. Unlike the engine's PF_inPVS it does not
  * look at area portals (closed doors): the game does not tell the botlib
- * their state. */
-static int Q3inPVS_Adapter(vec3_t p1, vec3_t p2)
+ * their state.
+ *
+ * In two halves, the cluster of a point and whether two clusters see each
+ * other, for the snapshot (ai_q2_shim.c Q2Shim_BuildSnapshot): it tests every
+ * entity against one bot's eye, for every bot, every frame, and walking the
+ * tree for both points of each pair was 32 bots x ~300 entities x 2 descents
+ * a frame -- over 40% of a 32-bot server's CPU. Q3's server
+ * keeps an entity's clusters from the time it links the entity and only tests
+ * a bit; the snapshot now keeps each entity's cluster from the time its
+ * origin is set. Q2_CLUSTER_ANY is a point the tree cannot place (no tree, no
+ * visibility lump, a broken tree), which sees everything, even a point in
+ * solid; Q2_CLUSTER_OUTSIDE is a cluster past the visibility lump, which sees
+ * everything but a point in solid. The order of the tests is the old single
+ * function's. */
+#define Q2_CLUSTER_SOLID    -1
+#define Q2_CLUSTER_ANY      -2
+#define Q2_CLUSTER_OUTSIDE  -3
+
+int Q2_PointCluster(vec3_t p)
 {
-    int leaf1, leaf2, cluster1, cluster2;
+    int leaf, cluster;
 
     if (!q2_bsp_numleafs || !q2_bsp_vis)
+        return Q2_CLUSTER_ANY;
+    leaf = Q2_BSPPointLeaf(p);
+    if (leaf < 0)
+        return Q2_CLUSTER_ANY;
+    cluster = q2_bsp_leafs[leaf].cluster;
+    if (cluster < 0)
+        return Q2_CLUSTER_SOLID;
+    if (cluster >= q2_bsp_vis[0])
+        return Q2_CLUSTER_OUTSIDE;
+    return cluster;
+}
+
+int Q2_ClustersVisible(int cluster1, int cluster2)
+{
+    if (cluster1 == Q2_CLUSTER_ANY || cluster2 == Q2_CLUSTER_ANY)
         return true;
-    leaf1 = Q2_BSPPointLeaf(p1);
-    leaf2 = Q2_BSPPointLeaf(p2);
-    if (leaf1 < 0 || leaf2 < 0)
-        return true;
-    cluster1 = q2_bsp_leafs[leaf1].cluster;
-    cluster2 = q2_bsp_leafs[leaf2].cluster;
-    if (cluster1 < 0 || cluster2 < 0)
+    if (cluster1 == Q2_CLUSTER_SOLID || cluster2 == Q2_CLUSTER_SOLID)
         return false;
-    if (cluster1 >= q2_bsp_vis[0] || cluster2 >= q2_bsp_vis[0])
+    if (cluster1 == Q2_CLUSTER_OUTSIDE || cluster2 == Q2_CLUSTER_OUTSIDE)
         return true;
     if (cluster1 != q2_bsp_pvscluster)
         Q2_BSPClusterPVS(cluster1);
     return (q2_bsp_pvsrow[cluster2 >> 3] >> (cluster2 & 7)) & 1;
+}
+
+static int Q3inPVS_Adapter(vec3_t p1, vec3_t p2)
+{
+    return Q2_ClustersVisible(Q2_PointCluster(p1), Q2_PointCluster(p2));
 }
 
 static char *Q3BSPEntityData_Callback(void)
