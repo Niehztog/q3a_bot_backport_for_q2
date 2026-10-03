@@ -1024,11 +1024,12 @@ void MoverBottomCenter(aas_reachability_t *reach, vec3_t bottomcenter)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-float BotGapDistance(vec3_t origin, vec3_t hordir, int entnum)
+static float BotGapDistance2(vec3_t origin, vec3_t hordir, int entnum, int steep)
 {
 	float dist, startz;
 	vec3_t start, end;
 	aas_trace_t trace;
+	int areanum;
 
 	//do gap checking
 	startz = origin[2];
@@ -1062,11 +1063,62 @@ float BotGapDistance(vec3_t origin, vec3_t hordir, int entnum)
 				//botimport.Print(PRT_MESSAGE, "gap at %f\n", dist);
 				return dist;
 			} //end if
+			//ground too steep to stand on: Q2 slides the bot off it
+			if (steep && !trace.ent)
+			{
+				VectorCopy(trace.endpos, end);
+				end[2] += 1;
+				areanum = AAS_PointAreaNum(end);
+				if (areanum && !AAS_AreaGrounded(areanum) &&
+					!AAS_OnGround(end, PRESENCE_CROUCH, entnum)) return dist;
+			} //end if
 			startz = trace.endpos[2];
 		} //end if
 	} //end for
 	return 0;
+} //end of the function BotGapDistance2
+//===========================================================================
+//
+// Parameter:			-
+// Returns:				-
+// Changes Globals:		-
+//===========================================================================
+float BotGapDistance(vec3_t origin, vec3_t hordir, int entnum)
+{
+	return BotGapDistance2(origin, hordir, entnum, false);
 } //end of the function BotGapDistance
+//===========================================================================
+// brakes when the velocity the bot will have after this frame's movement
+// command runs into a gap or onto ground too steep to stand on before
+// friction alone could stop it: the bot steers towards points at 10 Hz,
+// and its momentum carries it on when a route turns at an edge or the AI
+// stops steering
+//
+// Parameter:			-
+// Returns:				true if the bot brakes
+// Changes Globals:		-
+//===========================================================================
+int BotMomentumBrake(vec3_t origin, vec3_t velocity, int entnum, int client, vec3_t cmddir, float cmdspeed)
+{
+	vec3_t vel, dir, none = {0, 0, 0};
+	float speed, coast, travel, dist;
+
+	coast = AAS_GroundMoveFrame(velocity, cmddir, cmdspeed, 0.1f, vel);
+	VectorCopy(vel, dir);
+	speed = VectorNormalize(dir);
+	if (speed < 50) return false;
+	travel = (sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1]) + speed) * 0.5f * 0.1f;
+	dist = BotGapDistance2(origin, dir, entnum, true);
+	if (dist < 8 || dist > 40 + travel + coast) return false;
+	//brake against the velocity, as hard as cancels it and no harder: a
+	//bot thrown back the other way brakes again at a gap behind it
+	AAS_GroundMoveFrame(velocity, none, 0, 0.1f, vel);
+	VectorNegate(vel, dir);
+	speed = VectorNormalize(dir);
+	if (speed < 1) return false;
+	EA_Move(client, dir, speed);
+	return true;
+} //end of the function BotMomentumBrake
 //===========================================================================
 //
 // Parameter:			-
@@ -1409,7 +1461,8 @@ bot_moveresult_t BotTravel_Walk(bot_movestate_t *ms, aas_reachability_t *reach)
 		else speed = 400;
 	} //end else
 	//elemantary action move in direction
-	EA_Move(ms->client, hordir, speed);
+	if (!BotMomentumBrake(ms->origin, ms->velocity, ms->entitynum, ms->client, hordir, speed))
+		EA_Move(ms->client, hordir, speed);
 	VectorCopy(hordir, result.movedir);
 	//
 	return result;

@@ -33,6 +33,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern aas_settings_t aassettings;
 #endif //AASINTERN
 
+//one frame of ground movement, and the distance coasted after it
+float AAS_GroundMoveFrame(vec3_t velocity, vec3_t cmddir, float cmdspeed, float frametime, vec3_t newvelocity);
 //movement prediction
 int AAS_PredictClientMovement(struct aas_clientmove_s *move,
 							int entnum, vec3_t origin,

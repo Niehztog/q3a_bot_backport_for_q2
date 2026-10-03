@@ -2397,6 +2397,32 @@ static void Q2BotUsePowerups(bot_state_t *bs, int client)
     }
 }
 
+/* A bot the AI does not steer this frame coasts: standing to type a chat,
+ * a goal reached, a node that does not move. From the 300 ups of a run Q2's
+ * friction takes ~35 units to stop it, and where that runs off a ledge or
+ * onto a bank too steep to stand on -- at q2dm7's slime pools, say -- the
+ * bot slid in while the AI thought it was standing still. Q3's movement
+ * code looks at momentum nowhere, so here it is looked at for the frames no
+ * movement code ran: the brake of be_ai_move.c's walking (BotMomentumBrake)
+ * with no command. A bot in the air, swimming, jumping or using the
+ * keyboard-style moves (ladders, water jumps) is left alone. */
+extern int BotMomentumBrake(vec3_t origin, vec3_t velocity, int entnum, int client,
+                            vec3_t cmddir, float cmdspeed);
+
+static void Q2BotCoastBrake(bot_state_t *bs, float thinktime)
+{
+    bot_input_t bi;
+
+    if (bs->cur_ps.pm_type != Q3PM_NORMAL || bs->inventory[INVENTORY_HEALTH] <= 0) return;
+    if (bs->cur_ps.groundEntityNum == ENTITYNUM_NONE) return;
+    if (AAS_Swimming(bs->origin)) return;
+    EA_GetInput(bs->client, thinktime, &bi);
+    if (bi.speed > 0) return;
+    if (bi.actionflags & (ACTION_JUMP|ACTION_DELAYEDJUMP|ACTION_MOVEFORWARD|
+                          ACTION_MOVEBACK|ACTION_MOVELEFT|ACTION_MOVERIGHT)) return;
+    BotMomentumBrake(bs->origin, bs->cur_ps.velocity, bs->entitynum, bs->client, vec3_origin, 0);
+}
+
 static int Q2BotAI(int client, float thinktime)
 {
     bot_state_t   *bs;
@@ -2503,6 +2529,7 @@ static int Q2BotAI(int client, float thinktime)
      * q3input.viewangles below is already the fully-resolved answer; no
      * separate priority reconstruction is needed on this side of the
      * bridge. --- */
+    Q2BotCoastBrake(bs, thinktime);
     Com_Memset(&q3input, 0, sizeof(q3input));
     EA_GetInput(client, thinktime, &q3input);
     q2_lastattack[client] = (q3input.actionflags & 0x0000001) != 0;  /* ACTION_ATTACK */
