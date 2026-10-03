@@ -728,11 +728,37 @@ static void Q3Trace_Adapter(bsp_trace_t *trace, vec3_t start, vec3_t mins,
  * stops at the world, and another entity has its own test. Reporting those
  * hits made every area with an item or a player collide with the world
  * geometry, on AAS plane 0 (AAS_AreaEntityCollision knows no plane), which
- * threw off the on-ground tests and the movement and aim predictions there. */
+ * threw off the on-ground tests and the movement and aim predictions there.
+ *
+ * Before tracing, what the world trace could report as this entity at all.
+ * The engine clips nothing SOLID_NOT or SOLID_TRIGGER, and a SOLID_BBOX entity
+ * as a box of CONTENTS_MONSTER (CM_HeadnodeForBox), which is Q3's
+ * CONTENTS_BODY; the AAS asks with CONTENTS_SOLID|CONTENTS_PLAYERCLIP
+ * (be_aas_sample.c AAS_AreaEntityCollision). So of the items, players and
+ * missiles AAS_UpdateEntity links into its areas none can be hit, and only a
+ * brush model is worth a trace of the whole world -- Gladiator's
+ * AAS_EntityCollision likewise tests nothing but SOLID_BBOX and SOLID_BSP
+ * entities, in the library. Tracing them all was BotGapDistance's 13 traces
+ * a frame times every entity in every area each crosses, for every walking
+ * bot: with 32 bots the frames where they bunched up at items spent ~15 ms
+ * in it. The solid is the one the game sent this frame. */
 static void Q3EntityTrace_Adapter(bsp_trace_t *trace, vec3_t start, vec3_t mins,
                                    vec3_t maxs, vec3_t end,
                                    int entnum, int contentmask)
 {
+    int solid;
+
+    if (entnum >= 0 && entnum < aasworld.maxentities && aasworld.entities) {
+        solid = aasworld.entities[entnum].i.solid;
+        if (solid == SOLID_NOT || solid == SOLID_TRIGGER ||
+            (solid == SOLID_BBOX && !(contentmask & CONTENTS_BODY))) {
+            Com_Memset(trace, 0, sizeof(*trace));
+            trace->fraction = 1;
+            VectorCopy(end, trace->endpos);
+            trace->ent = ENTITYNUM_NONE;
+            return;
+        }
+    }
     *trace = q2import.Trace(start, mins, maxs, end, 0, Q3ContentMaskToQ2(contentmask));
     trace->ent = Q2_EdictToEntity(trace->ent);
     if (trace->ent != entnum) {
