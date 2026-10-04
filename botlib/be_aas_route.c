@@ -1028,22 +1028,55 @@ void AAS_WriteRouteCache(void)
 	botimport.Print(PRT_MESSAGE, "written %d bytes of routing cache\n", totalsize);
 } //end of the function AAS_WriteRouteCache
 //===========================================================================
+// reads a cache as AAS_WriteRouteCache wrote it: the struct, pointers
+// included, then the travel times and the reachabilities
 //
-// Parameter:			-
-// Returns:				-
+// Parameter:			type		: CACHETYPE_PORTAL or CACHETYPE_AREA
+// Returns:				the cache, or NULL if it does not fit the AAS
 // Changes Globals:		-
 //===========================================================================
-aas_routingcache_t *AAS_ReadCache(fileHandle_t fp)
+aas_routingcache_t *AAS_ReadCache(fileHandle_t fp, int type)
 {
-	int size;
-	aas_routingcache_t *cache;
+	int headersize, numtraveltimes, cluster;
+	aas_routingcache_t header, *cache;
 
-	botimport.FS_Read(&size, sizeof(size), fp);
-	cache = (aas_routingcache_t *) GetMemory(size);
-	cache->size = size;
-	botimport.FS_Read((unsigned char *)cache + sizeof(size), size - sizeof(size), fp);
-	cache->reachabilities = (unsigned char *) cache + sizeof(aas_routingcache_t) - sizeof(unsigned short) +
-		(size - sizeof(aas_routingcache_t) + sizeof(unsigned short)) / 3 * 2;
+	headersize = (byte *) header.traveltimes - (byte *) &header;
+	if (botimport.FS_Read(&header, headersize, fp) != headersize) return NULL;
+	if (header.type != type) return NULL;
+	if (header.cluster <= 0 || header.cluster >= aasworld.numclusters) return NULL;
+	if (header.areanum <= 0 || header.areanum >= aasworld.numareas) return NULL;
+	if (type == CACHETYPE_PORTAL)
+	{
+		numtraveltimes = aasworld.numportals;
+	} //end if
+	else
+	{
+		//the area must be in the cluster or be one of its portals
+		cluster = aasworld.areasettings[header.areanum].cluster;
+		if (cluster < 0)
+		{
+			if (aasworld.portals[-cluster].frontcluster != header.cluster &&
+					aasworld.portals[-cluster].backcluster != header.cluster) return NULL;
+		} //end if
+		else if (cluster != header.cluster) return NULL;
+		numtraveltimes = aasworld.clusters[header.cluster].numreachabilityareas;
+	} //end else
+	if (header.size != (int) sizeof(aas_routingcache_t) + numtraveltimes * 3) return NULL;
+	//the travel times and the reachabilities are where AAS_AllocRoutingCache puts them
+	cache = AAS_AllocRoutingCache(numtraveltimes);
+	if (botimport.FS_Read(cache->traveltimes, cache->size - headersize, fp) != cache->size - headersize)
+	{
+		routingcachesize -= cache->size;
+		FreeMemory(cache);
+		return NULL;
+	} //end if
+	cache->type = type;
+	cache->time = AAS_RoutingTime();
+	cache->cluster = header.cluster;
+	cache->areanum = header.areanum;
+	VectorCopy(header.origin, cache->origin);
+	cache->starttraveltime = header.starttraveltime;
+	cache->travelflags = header.travelflags;
 	return cache;
 } //end of the function AAS_ReadCache
 //===========================================================================
@@ -1054,7 +1087,7 @@ aas_routingcache_t *AAS_ReadCache(fileHandle_t fp)
 //===========================================================================
 int AAS_ReadRouteCache(void)
 {
-	int i, clusterareanum;//, size;
+	int i, j, clusterareanum;//, size;
 	fileHandle_t fp;
 	char filename[MAX_QPATH];
 	routecacheheader_t routecacheheader;
@@ -1070,56 +1103,77 @@ int AAS_ReadRouteCache(void)
 	if (routecacheheader.ident != RCID)
 	{
 		AAS_Error("%s is not a route cache dump\n", filename);
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	if (routecacheheader.version != RCVERSION)
 	{
 		AAS_Error("route cache dump has wrong version %d, should be %d\n", routecacheheader.version, RCVERSION);
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	if (routecacheheader.numareas != aasworld.numareas)
 	{
 		//AAS_Error("route cache dump has wrong number of areas\n");
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	if (routecacheheader.numclusters != aasworld.numclusters)
 	{
 		//AAS_Error("route cache dump has wrong number of clusters\n");
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	if (routecacheheader.areacrc !=
 		CRC_ProcessString( (unsigned char *)aasworld.areas, sizeof(aas_area_t) * aasworld.numareas ))
 	{
 		//AAS_Error("route cache dump area CRC incorrect\n");
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	if (routecacheheader.clustercrc !=
 		CRC_ProcessString( (unsigned char *)aasworld.clusters, sizeof(aas_cluster_t) * aasworld.numclusters ))
 	{
 		//AAS_Error("route cache dump cluster CRC incorrect\n");
+		botimport.FS_FCloseFile(fp);
 		return false;
 	} //end if
 	//read all the portal cache
 	for (i = 0; i < routecacheheader.numportalcache; i++)
 	{
-		cache = AAS_ReadCache(fp);
+		cache = AAS_ReadCache(fp, CACHETYPE_PORTAL);
+		if (!cache) break;
 		cache->next = aasworld.portalcache[cache->areanum];
 		cache->prev = NULL;
 		if (aasworld.portalcache[cache->areanum])
 			aasworld.portalcache[cache->areanum]->prev = cache;
 		aasworld.portalcache[cache->areanum] = cache;
+		AAS_LinkCache(cache);
 	} //end for
 	//read all the cluster area cache
-	for (i = 0; i < routecacheheader.numareacache; i++)
+	for (j = 0; i == routecacheheader.numportalcache && j < routecacheheader.numareacache; j++)
 	{
-		cache = AAS_ReadCache(fp);
+		cache = AAS_ReadCache(fp, CACHETYPE_AREA);
+		if (!cache) break;
 		clusterareanum = AAS_ClusterAreaNum(cache->cluster, cache->areanum);
 		cache->next = aasworld.clusterareacache[cache->cluster][clusterareanum];
 		cache->prev = NULL;
 		if (aasworld.clusterareacache[cache->cluster][clusterareanum])
 			aasworld.clusterareacache[cache->cluster][clusterareanum]->prev = cache;
 		aasworld.clusterareacache[cache->cluster][clusterareanum] = cache;
+		AAS_LinkCache(cache);
 	} //end for
+	//if a cache could not be read, drop the ones that could
+	if (i != routecacheheader.numportalcache || j != routecacheheader.numareacache)
+	{
+		botimport.Print(PRT_WARNING, "%s is damaged, not using it\n", filename);
+		AAS_FreeAllClusterAreaCache();
+		AAS_FreeAllPortalCache();
+		AAS_InitClusterAreaCache();
+		AAS_InitPortalCache();
+		botimport.FS_FCloseFile(fp);
+		return false;
+	} //end if
 	// read the visareas
 	/*
 	aasworld.areavisibility = (byte **) GetClearedMemory(aasworld.numareas * sizeof(byte *));
@@ -1512,6 +1566,7 @@ void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache)
 					portalcache->traveltimes[portalnum] > t)
 			{
 				portalcache->traveltimes[portalnum] = t;
+				portalcache->reachabilities[portalnum] = cache->reachabilities[clusterareanum];
 				nextupdate = &aasworld.portalupdate[portalnum];
 				if (portal->frontcluster == curupdate->cluster)
 				{
@@ -1627,7 +1682,9 @@ int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, int goalareanum, int tra
 		return false;
 	} //end if
 	// make sure the routing cache doesn't grow to large
-	while(AvailableMemory() < 1 * 1024 * 1024) {
+	//Q2: the memory is the game's, with no zone that could run low
+	//(AvailableMemory): keep the cache within max_routingcache instead
+	while(routingcachesize > max_routingcachesize) {
 		if (!AAS_FreeOldestCache()) break;
 	}
 	//

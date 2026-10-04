@@ -985,6 +985,11 @@ static void Q3BotClientCommand_Adapter(int client, char *command)
         q2import.BotClientCommand(client, cmdbuf, NULL);
 }
 
+/* Q3 passes the free space of its zone here, and its one user, the routing
+ * cache, freed old routes while less than 1 MB was left.  This library's
+ * memory is the game's (malloc), with no zone to run low, so nothing calls
+ * this any more: be_aas_route.c keeps the routing cache within the
+ * max_routingcache libvar instead (see GetBotAPI). */
 static int Q3AvailableMemory_Stub(void)
 {
     return 0x800000;  /* 8 MB placeholder */
@@ -2952,8 +2957,13 @@ Q2_BOTLIB_EXPORT q2_bot_export_t *GetBotAPI(q2_bot_import_t *import)
      * botlib to skip the check (it only validates if non-zero). */
     LibVarSet("sv_mapChecksum", "0");
 
-    /* #17 — Routing cache config: tune for Q2 map sizes */
-    LibVarSet("max_routingcache", "8192"); /* 8MB (doubled from Q3 default 4MB) */
+    /* #17 — Routing cache: be_aas_route.c frees the oldest routes while the
+     * cache is larger than max_routingcache KB.  Q3 freed them only when its
+     * 16 MB zone ran low.  The largest stock map, q2ctf4, has 6.2 MB of
+     * routes per set of travel flags, and 32 bots filled 7.2-7.8 MB of them
+     * in 10-40 minutes, most of it the default set.  Freeing a route costs
+     * only the time to compute it again: the games stay the same. */
+    LibVarSet("max_routingcache", "16384");
     LibVarSet("saveroutingcache", "0");    /* don't save to disk by default */
 
     /* Debug logging: set to 1 via BotLibVarSet("bot_developer","1") from
