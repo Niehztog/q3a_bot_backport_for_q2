@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -48,10 +48,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "inv.h"
 #include "syn.h"
 
-//l_precomp.h has its own MAX_PATH
-#undef MAX_PATH
-#define MAX_PATH		144
-
 
 //bot states
 bot_state_t	*botstates[MAX_CLIENTS];
@@ -72,7 +68,7 @@ vmCvar_t bot_pause;
 vmCvar_t bot_report;
 vmCvar_t bot_testsolid;
 vmCvar_t bot_testclusters;
-vmCvar_t bot_developer_cvar;	//botlib's own int bot_developer has the name
+vmCvar_t bot_developer;
 vmCvar_t bot_interbreedchar;
 vmCvar_t bot_interbreedbots;
 vmCvar_t bot_interbreedcycle;
@@ -162,7 +158,7 @@ void BotTestAAS(vec3_t origin) {
 	if (bot_testsolid.integer) {
 		if (!trap_AAS_Initialized()) return;
 		areanum = BotPointAreaNum(origin);
-		if (areanum) BotAI_Print(PRT_MESSAGE, "\remtpy area");
+		if (areanum) BotAI_Print(PRT_MESSAGE, "\rempty area");
 		else BotAI_Print(PRT_MESSAGE, "\r^1SOLID area");
 	}
 	else if (bot_testclusters.integer) {
@@ -775,8 +771,10 @@ int BotAI(int client, float thinktime) {
 	}
 
 	//retrieve the current client state
-	BotAI_GetClientState( client, &bs->cur_ps );
-
+	if (!BotAI_GetClientState(client, &bs->cur_ps)) {
+		BotAI_Print(PRT_FATAL, "BotAI: failed to get player state for player %d\n", client);
+		return false;
+	}
 	//retrieve any waiting server commands
 	while( trap_BotGetServerCommand(client, buf, sizeof(buf)) ) {
 		//have buf point to the command and args to the command arguments
@@ -905,7 +903,8 @@ void BotWriteSessionData(bot_state_t *bs) {
 			"%i %i %i %i %i %i %i %i"
 			" %f %f %f"
 			" %f %f %f"
-			" %f %f %f",
+			" %f %f %f"
+			" %f",
 		bs->lastgoal_decisionmaker,
 		bs->lastgoal_ltgtype,
 		bs->lastgoal_teammate,
@@ -922,7 +921,8 @@ void BotWriteSessionData(bot_state_t *bs) {
 		bs->lastgoal_teamgoal.mins[2],
 		bs->lastgoal_teamgoal.maxs[0],
 		bs->lastgoal_teamgoal.maxs[1],
-		bs->lastgoal_teamgoal.maxs[2]
+		bs->lastgoal_teamgoal.maxs[2],
+		bs->formation_dist
 		);
 
 	var = va( "botsession%i", bs->client );
@@ -946,7 +946,8 @@ void BotReadSessionData(bot_state_t *bs) {
 			"%i %i %i %i %i %i %i %i"
 			" %f %f %f"
 			" %f %f %f"
-			" %f %f %f",
+			" %f %f %f"
+			" %f",
 		&bs->lastgoal_decisionmaker,
 		&bs->lastgoal_ltgtype,
 		&bs->lastgoal_teammate,
@@ -963,7 +964,8 @@ void BotReadSessionData(bot_state_t *bs) {
 		&bs->lastgoal_teamgoal.mins[2],
 		&bs->lastgoal_teamgoal.maxs[0],
 		&bs->lastgoal_teamgoal.maxs[1],
-		&bs->lastgoal_teamgoal.maxs[2]
+		&bs->lastgoal_teamgoal.maxs[2],
+		&bs->formation_dist
 		);
 }
 
@@ -973,12 +975,16 @@ BotAISetupClient
 ==============
 */
 int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean restart) {
-	char filename[MAX_PATH], name[MAX_PATH], gender[MAX_PATH];
+	char filename[144], name[144], gender[144];
 	bot_state_t *bs;
 	int errnum;
 
 	if (!botstates[client]) botstates[client] = G_Alloc(sizeof(bot_state_t));
 	bs = botstates[client];
+
+	if (!bs) {
+		return false;
+	}
 
 	if (bs && bs->inuse) {
 		BotAI_Print(PRT_FATAL, "BotAISetupClient: client %d already setup\n", client);
@@ -1001,7 +1007,7 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 	//allocate a goal state
 	bs->gs = trap_BotAllocGoalState(client);
 	//load the item weights
-	trap_Characteristic_String(bs->character, CHARACTERISTIC_ITEMWEIGHTS, filename, MAX_PATH);
+	trap_Characteristic_String(bs->character, CHARACTERISTIC_ITEMWEIGHTS, filename, sizeof(filename));
 	errnum = trap_BotLoadItemWeights(bs->gs, filename);
 	if (errnum != BLERR_NOERROR) {
 		trap_BotFreeGoalState(bs->gs);
@@ -1010,7 +1016,7 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 	//allocate a weapon state
 	bs->ws = trap_BotAllocWeaponState();
 	//load the weapon weights
-	trap_Characteristic_String(bs->character, CHARACTERISTIC_WEAPONWEIGHTS, filename, MAX_PATH);
+	trap_Characteristic_String(bs->character, CHARACTERISTIC_WEAPONWEIGHTS, filename, sizeof(filename));
 	errnum = trap_BotLoadWeaponWeights(bs->ws, filename);
 	if (errnum != BLERR_NOERROR) {
 		trap_BotFreeGoalState(bs->gs);
@@ -1020,8 +1026,8 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 	//allocate a chat state
 	bs->cs = trap_BotAllocChatState();
 	//load the chat file
-	trap_Characteristic_String(bs->character, CHARACTERISTIC_CHAT_FILE, filename, MAX_PATH);
-	trap_Characteristic_String(bs->character, CHARACTERISTIC_CHAT_NAME, name, MAX_PATH);
+	trap_Characteristic_String(bs->character, CHARACTERISTIC_CHAT_FILE, filename, sizeof(filename));
+	trap_Characteristic_String(bs->character, CHARACTERISTIC_CHAT_NAME, name, sizeof(name));
 	errnum = trap_BotLoadChatFile(bs->cs, filename, name);
 	if (errnum != BLERR_NOERROR) {
 		trap_BotFreeChatState(bs->cs);
@@ -1030,7 +1036,7 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 		return false;
 	}
 	//get the gender characteristic
-	trap_Characteristic_String(bs->character, CHARACTERISTIC_GENDER, gender, MAX_PATH);
+	trap_Characteristic_String(bs->character, CHARACTERISTIC_GENDER, gender, sizeof(gender));
 	//set the chat gender
 	if (*gender == 'f' || *gender == 'F') trap_BotSetChatGender(bs->cs, CHAT_GENDERFEMALE);
 	else if (*gender == 'm' || *gender == 'M') trap_BotSetChatGender(bs->cs, CHAT_GENDERMALE);
@@ -1059,7 +1065,7 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 	if (restart) {
 		BotReadSessionData(bs);
 	}
-	//bot has been setup succesfully
+	//bot has been setup successfully
 	return true;
 }
 
@@ -1086,7 +1092,7 @@ int BotAIShutdownClient(int client, qboolean restart) {
 	}
 
 	trap_BotFreeMoveState(bs->ms);
-	//free the goal state`			
+	//free the goal state
 	trap_BotFreeGoalState(bs->gs);
 	//free the chat file
 	trap_BotFreeChatState(bs->cs);
@@ -1220,11 +1226,12 @@ int BotInitLibrary(void) {
 	if (!strlen(buf)) strcpy(buf, "0");
 	trap_BotLibVarSet("g_gametype", buf);
 	//bot developer mode and log file
-	trap_BotLibVarSet("bot_developer", bot_developer_cvar.string);
+	trap_BotLibVarSet("bot_developer", bot_developer.string);
+	trap_Cvar_VariableStringBuffer("logfile", buf, sizeof(buf));
 	trap_BotLibVarSet("log", buf);
 	//no chatting
 	trap_Cvar_VariableStringBuffer("bot_nochat", buf, sizeof(buf));
-	if (strlen(buf)) trap_BotLibVarSet("nochat", "0");
+	if (strlen(buf)) trap_BotLibVarSet("nochat", buf);
 	//visualize jump pads
 	trap_Cvar_VariableStringBuffer("bot_visualizejumppads", buf, sizeof(buf));
 	if (strlen(buf)) trap_BotLibVarSet("bot_visualizejumppads", buf);
@@ -1253,9 +1260,6 @@ int BotInitLibrary(void) {
 	//game directory
 	trap_Cvar_VariableStringBuffer("fs_game", buf, sizeof(buf));
 	if (strlen(buf)) trap_BotLibVarSet("gamedir", buf);
-	//cd directory
-	trap_Cvar_VariableStringBuffer("fs_cdpath", buf, sizeof(buf));
-	if (strlen(buf)) trap_BotLibVarSet("cddir", buf);
 	//
 #ifdef MISSIONPACK
 	trap_BotLibDefine("MISSIONPACK");
@@ -1279,7 +1283,7 @@ int BotAISetup( int restart ) {
 	trap_Cvar_Register(&bot_report, "bot_report", "0", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_testsolid, "bot_testsolid", "0", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_testclusters, "bot_testclusters", "0", CVAR_CHEAT);
-	trap_Cvar_Register(&bot_developer_cvar, "bot_developer", "0", CVAR_CHEAT);
+	trap_Cvar_Register(&bot_developer, "bot_developer", "0", CVAR_CHEAT);
 	trap_Cvar_Register(&bot_interbreedchar, "bot_interbreedchar", "", 0);
 	trap_Cvar_Register(&bot_interbreedbots, "bot_interbreedbots", "10", 0);
 	trap_Cvar_Register(&bot_interbreedcycle, "bot_interbreedcycle", "20", 0);

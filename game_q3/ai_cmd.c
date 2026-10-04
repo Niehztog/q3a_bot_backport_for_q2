@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -231,10 +231,7 @@ FindClientByName
 int FindClientByName(char *name) {
 	int i;
 	char buf[MAX_INFO_STRING];
-	static int maxclients;
 
-	if (!maxclients)
-		maxclients = trap_Cvar_VariableIntegerValue("sv_maxclients");
 	for (i = 0; i < maxclients && i < MAX_CLIENTS; i++) {
 		ClientName(i, buf, sizeof(buf));
 		if (!Q_stricmp(buf, name)) return i;
@@ -254,10 +251,7 @@ FindEnemyByName
 int FindEnemyByName(bot_state_t *bs, char *name) {
 	int i;
 	char buf[MAX_INFO_STRING];
-	static int maxclients;
 
-	if (!maxclients)
-		maxclients = trap_Cvar_VariableIntegerValue("sv_maxclients");
 	for (i = 0; i < maxclients && i < MAX_CLIENTS; i++) {
 		if (BotSameTeam(bs, i)) continue;
 		ClientName(i, buf, sizeof(buf));
@@ -279,10 +273,6 @@ NumPlayersOnSameTeam
 int NumPlayersOnSameTeam(bot_state_t *bs) {
 	int i, num;
 	char buf[MAX_INFO_STRING];
-	static int maxclients;
-
-	if (!maxclients)
-		maxclients = trap_Cvar_VariableIntegerValue("sv_maxclients");
 
 	num = 0;
 	for (i = 0; i < maxclients && i < MAX_CLIENTS; i++) {
@@ -1109,8 +1099,7 @@ void BotMatch_JoinSubteam(bot_state_t *bs, bot_match_t *match) {
 	//get the sub team name
 	trap_BotMatchVariable(match, TEAMNAME, teammate, sizeof(teammate));
 	//set the sub team name
-	strncpy(bs->subteam, teammate, 32);
-	bs->subteam[31] = '\0';
+	Q_strncpyz(bs->subteam, teammate, sizeof(bs->subteam));
 	//
 	trap_BotMatchVariable(match, NETNAME, netname, sizeof(netname));
 	BotAI_BotInitialChat(bs, "joinedteam", teammate, NULL);
@@ -1301,8 +1290,7 @@ void BotMatch_StartTeamLeaderShip(bot_state_t *bs, bot_match_t *match) {
 	if (match->subtype & ST_I) {
 		//get the team mate that will be the team leader
 		trap_BotMatchVariable(match, NETNAME, teammate, sizeof(teammate));
-		strncpy(bs->teamleader, teammate, sizeof(bs->teamleader));
-		bs->teamleader[sizeof(bs->teamleader)-1] = '\0';
+		Q_strncpyz(bs->teamleader, teammate, sizeof(bs->teamleader));
 	}
 	//chats for someone else
 	else {

@@ -912,9 +912,9 @@ static void Q3BSPModelMinsMaxsOrigin(int modelnum, vec3_t angles,
  *
  * Q2's ClientCommand says any command it does not know as chat, so Q3's
  * own commands must not reach it: every bot said "team" when it entered a
- * game. "team <name>" is how a Q3 bot joins bs->settings.team at setup
- * (BotDeathmatchAI) -- Q2 never provides one, the game puts bots on teams
- * itself. The voice chats have no Q2 counterpart.
+ * game, id's BotDeathmatchAI sending "team <name>" to join bs->settings.team
+ * at setup (ioquake3 dropped that) -- Q2 never provides one, the game puts
+ * bots on teams itself. The voice chats have no Q2 counterpart.
  *
  * "tell <client> <text>" (BotEnterChat CHAT_TELL; EA_Tell puts a comma after
  * the number) is how Q3 bots give and answer team orders (ai_team.c,
