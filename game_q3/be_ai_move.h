@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -100,8 +100,8 @@ typedef struct bot_moveresult_s
 	vec3_t ideal_viewangles;	//ideal viewangles for the movement
 } bot_moveresult_t;
 
-// bk001204: from code/botlib/be_ai_move.c
-// TTimo 04/12/2001 was moved here to avoid dup defines
+#define bot_moveresult_t_cleared(x) bot_moveresult_t (x) = {0, 0, 0, 0, 0, 0, 0, {0, 0, 0}, {0, 0, 0}}
+
 typedef struct bot_avoidspot_s
 {
 	vec3_t origin;

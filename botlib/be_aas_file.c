@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -61,8 +61,8 @@ void AAS_SwapAASData(void)
 		aasworld.bboxes[i].flags = LittleLong(aasworld.bboxes[i].flags);
 		for (j = 0; j < 3; j++)
 		{
-			aasworld.bboxes[i].mins[j] = LittleLong(aasworld.bboxes[i].mins[j]);
-			aasworld.bboxes[i].maxs[j] = LittleLong(aasworld.bboxes[i].maxs[j]);
+			aasworld.bboxes[i].mins[j] = LittleFloat(aasworld.bboxes[i].mins[j]);
+			aasworld.bboxes[i].maxs[j] = LittleFloat(aasworld.bboxes[i].maxs[j]);
 		} //end for
 	} //end for
 	//vertexes
@@ -277,11 +277,11 @@ void AAS_FileInfo(void)
 					aasworld.reachabilitysize * sizeof(aas_reachability_t) +
 					aasworld.numportals * sizeof(aas_portal_t) +
 					aasworld.numclusters * sizeof(aas_cluster_t);
-	botimport.Print(PRT_MESSAGE, "optimzed size %d KB\n", optimized >> 10);
+	botimport.Print(PRT_MESSAGE, "optimized size %d KB\n", optimized >> 10);
 } //end of the function AAS_FileInfo
 #endif //AASFILEDEBUG
 //===========================================================================
-// allocate memory and read a lump of a AAS file
+// allocate memory and read a lump of an AAS file
 //
 // Parameter:				-
 // Returns:					-
@@ -300,12 +300,12 @@ char *AAS_LoadAASLump(fileHandle_t fp, int offset, int length, int *lastoffset, 
 	if (offset != *lastoffset)
 	{
 		botimport.Print(PRT_WARNING, "AAS file not sequentially read\n");
-		if (botimport.FS_Seek(fp, offset, FS_SEEK_SET))
+		if (botimport.FS_Seek(fp, offset, FS_SEEK_SET) < 0)
 		{
 			AAS_Error("can't seek to aas lump\n");
 			AAS_DumpAASData();
 			botimport.FS_FCloseFile(fp);
-			return 0;
+			return NULL;
 		} //end if
 	} //end if
 	//allocate memory

@@ -51,6 +51,28 @@ typedef enum {false, true} qboolean;
 typedef unsigned char byte;
 #endif
 
+// for the botlib sources bspc compiles (l_script.c, l_precomp.c, ...), as
+// game_q3/q_shared.h has them for the botlib
+#ifndef Q_PRINTF_FUNC
+#ifdef __GNUC__
+#ifdef __MINGW32__
+#define Q_PRINTF_FUNC(fmt, va) \
+	__attribute__((format(gnu_printf, fmt, va))) \
+	__attribute__((format(ms_printf, fmt, va)))
+#else
+#define Q_PRINTF_FUNC(fmt, va) __attribute__((format(printf, fmt, va)))
+#endif
+#else
+#define Q_PRINTF_FUNC(fmt, va)
+#endif
+#endif
+#ifndef Q_vsnprintf
+#define Q_vsnprintf vsnprintf
+#endif
+void Q_strncpyz( char *dest, const char *src, int destsize );
+void Q_strcat( char *dest, int size, const char *src );
+void Com_sprintf( char *dest, int size, const char *fmt, ... ) Q_PRINTF_FUNC(3, 4);
+
 // the dec offsetof macro doesnt work very well...
 #define myoffsetof(type,identifier) ((size_t)&((type *)0)->identifier)
 

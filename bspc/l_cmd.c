@@ -550,6 +550,24 @@ void Q_strncpyz( char *dest, const char *src, int destsize ) {
     dest[destsize-1] = 0;
 }
 
+void Q_strcat( char *dest, int size, const char *src ) {
+	int		l1;
+
+	l1 = strlen( dest );
+	if ( l1 >= size ) {
+		Error( "Q_strcat: already overflowed" );
+	}
+	Q_strncpyz( dest + l1, src, size - l1 );
+}
+
+void Com_sprintf( char *dest, int size, const char *fmt, ... ) {
+	va_list		argptr;
+
+	va_start( argptr, fmt );
+	vsnprintf( dest, size, fmt, argptr );
+	va_end( argptr );
+}
+
 char *strupr (char *start)
 {
 	char	*in;

@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -218,5 +218,5 @@ typedef struct aas_predictroute_s
 	int endcontents;		//contents at the end of movement prediction
 	int endtravelflags;		//end travel flags
 	int numareas;			//number of areas predicted ahead
-	int time;				//time predicted ahead (in hundreth of a sec)
+	int time;				//time predicted ahead (in hundredths of a sec)
 } aas_predictroute_t;

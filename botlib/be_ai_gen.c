@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -51,7 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //===========================================================================
 int GeneticSelection(int numranks, float *rankings)
 {
-	float sum, select;
+	float sum;
 	int i, index;
 
 	sum = 0;
@@ -62,9 +62,9 @@ int GeneticSelection(int numranks, float *rankings)
 	} //end for
 	if (sum > 0)
 	{
-		//select a bot where the ones with the higest rankings have
+		//select a bot where the ones with the highest rankings have
 		//the highest chance of being selected
-		select = random() * sum;
+		//sum *= random();
 		for (i = 0; i < numranks; i++)
 		{
 			if (rankings[i] < 0) continue;

@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -70,7 +70,7 @@ typedef struct bsp_entity_s
 	bsp_epair_t *epairs;
 } bsp_entity_t;
 
-//id Sofware BSP data
+//id Software BSP data
 typedef struct bsp_s
 {
 	//true when bsp file is loaded
@@ -286,8 +286,7 @@ int AAS_ValueForBSPEpairKey(int ent, char *key, char *value, int size)
 	{
 		if (!strcmp(epair->key, key))
 		{
-			strncpy(value, epair->value, size-1);
-			value[size-1] = '\0';
+			Q_strncpyz(value, epair->value, size);
 			return true;
 		} //end if
 	} //end for
@@ -392,7 +391,7 @@ void AAS_ParseBSPEntities(void)
 	{
 		if (strcmp(token.string, "{"))
 		{
-			ScriptError(script, "invalid %s\n", token.string);
+			ScriptError(script, "invalid %s", token.string);
 			AAS_FreeBSPEntities();
 			FreeScript(script);
 			return;
@@ -413,7 +412,7 @@ void AAS_ParseBSPEntities(void)
 			ent->epairs = epair;
 			if (token.type != TT_STRING)
 			{
-				ScriptError(script, "invalid %s\n", token.string);
+				ScriptError(script, "invalid %s", token.string);
 				AAS_FreeBSPEntities();
 				FreeScript(script);
 				return;
@@ -433,7 +432,7 @@ void AAS_ParseBSPEntities(void)
 		} //end while
 		if (strcmp(token.string, "}"))
 		{
-			ScriptError(script, "missing }\n");
+			ScriptError(script, "missing }");
 			AAS_FreeBSPEntities();
 			FreeScript(script);
 			return;
@@ -469,7 +468,7 @@ void AAS_DumpBSPData(void)
 	Com_Memset( &bspworld, 0, sizeof(bspworld) );
 } //end of the function AAS_DumpBSPData
 //===========================================================================
-// load an bsp file
+// load a .bsp file
 //
 // Parameter:				-
 // Returns:					-

@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -79,29 +79,30 @@ struct weaponinfo_s;
 #define BLERR_CANNOTLOADWEAPONCONFIG	12	//cannot load weapon config
 
 //action flags
-#define ACTION_ATTACK			0x0000001
-#define ACTION_USE				0x0000002
-#define ACTION_RESPAWN			0x0000008
-#define ACTION_JUMP				0x0000010
-#define ACTION_MOVEUP			0x0000020
-#define ACTION_CROUCH			0x0000080
-#define ACTION_MOVEDOWN			0x0000100
-#define ACTION_MOVEFORWARD		0x0000200
-#define ACTION_MOVEBACK			0x0000800
-#define ACTION_MOVELEFT			0x0001000
-#define ACTION_MOVERIGHT		0x0002000
-#define ACTION_DELAYEDJUMP		0x0008000
-#define ACTION_TALK				0x0010000
-#define ACTION_GESTURE			0x0020000
-#define ACTION_WALK				0x0080000
-#define ACTION_AFFIRMATIVE		0x0100000
-#define ACTION_NEGATIVE			0x0200000
-#define ACTION_GETFLAG			0x0800000
-#define ACTION_GUARDBASE		0x1000000
-#define ACTION_PATROL			0x2000000
-#define ACTION_FOLLOWME			0x8000000
+#define ACTION_ATTACK			0x00000001
+#define ACTION_USE			0x00000002
+#define ACTION_RESPAWN			0x00000008
+#define ACTION_JUMP			0x00000010
+#define ACTION_MOVEUP			0x00000020
+#define ACTION_CROUCH			0x00000080
+#define ACTION_MOVEDOWN			0x00000100
+#define ACTION_MOVEFORWARD		0x00000200
+#define ACTION_MOVEBACK			0x00000800
+#define ACTION_MOVELEFT			0x00001000
+#define ACTION_MOVERIGHT		0x00002000
+#define ACTION_DELAYEDJUMP		0x00008000
+#define ACTION_TALK			0x00010000
+#define ACTION_GESTURE			0x00020000
+#define ACTION_WALK			0x00080000
+#define ACTION_AFFIRMATIVE		0x00100000
+#define ACTION_NEGATIVE			0x00200000
+#define ACTION_GETFLAG			0x00800000
+#define ACTION_GUARDBASE		0x01000000
+#define ACTION_PATROL			0x02000000
+#define ACTION_FOLLOWME			0x08000000
+#define ACTION_JUMPEDLASTFRAME		0x10000000
 
-//the bot input, will be converted to an usercmd_t
+//the bot input, will be converted to a usercmd_t
 typedef struct bot_input_s
 {
 	float thinktime;		//time since last output (in seconds)
@@ -169,7 +170,7 @@ typedef struct bot_entitystate_s
 typedef struct botlib_import_s
 {
 	//print messages from the bot library
-	void		(QDECL *Print)(int type, char *fmt, ...);
+	void		(QDECL *Print)(int type, char *fmt, ...) Q_PRINTF_FUNC(2, 3);
 	//trace a bbox through the world
 	void		(*Trace)(bsp_trace_t *trace, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask);
 	//trace a bbox against a specific entity
@@ -408,9 +409,9 @@ typedef struct botlib_export_s
 	//shutdown the bot library, returns BLERR_
 	int (*BotLibShutdown)(void);
 	//sets a library variable returns BLERR_
-	int (*BotLibVarSet)(char *var_name, char *value);
+	int (*BotLibVarSet)(const char *var_name, const char *value);
 	//gets a library variable returns BLERR_
-	int (*BotLibVarGet)(char *var_name, char *value, int size);
+	int (*BotLibVarGet)(const char *var_name, char *value, int size);
 
 	//sets a C-like define returns BLERR_
 	int (*PC_AddGlobalDefine)(char *string);
@@ -436,14 +437,14 @@ botlib_export_t *GetBotLibAPI( int apiVersion, botlib_import_t *import );
 
 name:						default:			module(s):			description:
 
-"basedir"					""					l_utils.c			base directory
-"gamedir"					""					l_utils.c			game directory
-"cddir"						""					l_utils.c			CD directory
+"basedir"					""					-					base directory
+"gamedir"					""					be_interface.c		mod game directory
+"basegame"					""					be_interface.c		base game directory
 
 "log"						"0"					l_log.c				enable/disable creating a log file
 "maxclients"				"4"					be_interface.c		maximum number of clients
 "maxentities"				"1024"				be_interface.c		maximum number of entities
-"bot_developer"				"0"					be_interface.c		bot developer mode
+"bot_developer"				"0"					be_interface.c		bot developer mode (it's "botDeveloper" in C to prevent symbol clash).
 
 "phys_friction"				"6"					be_aas_move.c		ground friction
 "phys_stopspeed"			"100"				be_aas_move.c		stop speed

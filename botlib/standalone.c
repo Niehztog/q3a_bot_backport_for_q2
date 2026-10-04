@@ -14,7 +14,7 @@ void QDECL Com_Error ( int level, const char *error, ... ) {
 	char		text[1024];
 
 	va_start (argptr, error);
-	vsprintf (text, error, argptr);
+	Q_vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
 
     botimport.Print(PRT_ERROR, "%s", text);
@@ -23,13 +23,23 @@ void Q_strncpyz( char *dest, const char *src, int destsize ) {
 	strncpy( dest, src, destsize-1 );
     dest[destsize-1] = 0;
 }
+void Q_strcat( char *dest, int size, const char *src ) {
+	int		l1;
+
+	l1 = strlen( dest );
+	if ( l1 >= size ) {
+		Com_Error( ERR_FATAL, "Q_strcat: already overflowed" );
+		return;	/* this Com_Error returns */
+	}
+	Q_strncpyz( dest + l1, src, size - l1 );
+}
 void QDECL Com_Printf (const char *msg, ...)
 {
     va_list		argptr;
     char		text[1024];
 
     va_start (argptr, msg);
-    vsprintf (text, msg, argptr);
+    Q_vsnprintf (text, sizeof(text), msg, argptr);
     va_end (argptr);
 
     botimport.Print(PRT_MESSAGE, "%s", text);

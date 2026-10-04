@@ -96,6 +96,21 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #endif
 
+#ifndef Q_PRINTF_FUNC
+#ifdef __GNUC__
+#ifdef __MINGW32__
+// For some reason MinGW wants both gnu_printf and ms_printf
+#define Q_PRINTF_FUNC(fmt, va) \
+	__attribute__((format(gnu_printf, fmt, va))) \
+	__attribute__((format(ms_printf, fmt, va)))
+#else
+#define Q_PRINTF_FUNC(fmt, va) __attribute__((format(printf, fmt, va)))
+#endif
+#else
+#define Q_PRINTF_FUNC(fmt, va)
+#endif
+#endif
+
 
 // this is the define for determining if we have an asm version of a C function
 #if (defined _M_IX86 || defined __i386__) && !defined __sun__  && !defined __LCC__
@@ -354,6 +369,14 @@ typedef int		qhandle_t;
 typedef int		sfxHandle_t;
 typedef int		fileHandle_t;
 typedef int		clipHandle_t;
+
+#ifndef Q_vsnprintf
+#define Q_vsnprintf vsnprintf
+#endif
+
+#define PAD(base, alignment)	(((base)+(alignment)-1) & ~((alignment)-1))
+
+#define ARRAY_LEN(x)			(sizeof(x) / sizeof(*(x)))
 
 
 #ifndef NULL

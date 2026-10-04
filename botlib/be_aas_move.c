@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
@@ -168,7 +168,7 @@ int AAS_AgainstLadder(vec3_t origin)
 		//get the plane the face is in
 		plane = &aasworld.planes[face->planenum ^ side];
 		//if the origin is pretty close to the plane
-		if (abs(DotProduct(plane->normal, origin) - plane->dist) < 3)
+		if (fabsf(DotProduct(plane->normal, origin) - plane->dist) < 3)
 		{
 			if (AAS_PointInsideFace(abs(facenum), origin, 0.1f)) return true;
 		} //end if
@@ -392,19 +392,6 @@ void AAS_Accelerate(vec3_t velocity, float frametime, vec3_t wishdir, float wish
 	}
 } //end of the function AAS_Accelerate
 //===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
-void AAS_AirControl(vec3_t start, vec3_t end, vec3_t velocity, vec3_t cmdmove)
-{
-	vec3_t dir;
-
-	VectorSubtract(end, start, dir);
-	(void)dir;
-} //end of the function AAS_AirControl
-//===========================================================================
 // applies ground friction to the given velocity
 //
 // Parameter:			-
@@ -562,7 +549,8 @@ int AAS_ClientMovementPrediction(struct aas_clientmove_s *move,
 	float phys_maxstep, phys_maxsteepness, phys_jumpvel, friction;
 	float gravity, delta, maxvel, wishspeed, accelerate;
 	//float velchange, newvel;
-	int n, i, j, pc, step, swimming, ax, crouch, event, jump_frame, areanum;
+	//int ax;
+	int n, i, j, pc, step, swimming, crouch, event, jump_frame, areanum;
 	int areas[20], numareas;
 	vec3_t points[20];
 	vec3_t org, end, feet, start, stepend, lastorg, wishdir;
@@ -570,8 +558,7 @@ int AAS_ClientMovementPrediction(struct aas_clientmove_s *move,
 	vec3_t up = {0, 0, 1};
 	aas_plane_t *plane, *plane2;
 	aas_trace_t trace, steptrace;
-	
-	(void)ax;
+
 	if (frametime <= 0) frametime = 0.1f;
 	//
 	phys_friction = aassettings.phys_friction;
@@ -619,7 +606,7 @@ int AAS_ClientMovementPrediction(struct aas_clientmove_s *move,
 		//apply command movement
 		if (n < cmdframes)
 		{
-			ax = 0;
+			//ax = 0;
 			maxvel = phys_maxwalkvelocity;
 			accelerate = phys_airaccelerate;
 			VectorCopy(cmdmove, wishdir);
@@ -643,13 +630,13 @@ int AAS_ClientMovementPrediction(struct aas_clientmove_s *move,
 				{
 					accelerate = phys_walkaccelerate;
 				} //end else
-				ax = 2;
+				//ax = 2;
 			} //end if
 			if (swimming)
 			{
 				maxvel = phys_maxswimvelocity;
 				accelerate = phys_swimaccelerate;
-				ax = 3;
+				//ax = 3;
 			} //end if
 			else
 			{

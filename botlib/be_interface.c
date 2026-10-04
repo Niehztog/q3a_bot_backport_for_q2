@@ -15,13 +15,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Foobar; if not, write to the Free Software
+along with Quake III Arena source code; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
 /*****************************************************************************
- * name:		be_interface.c // bk010221 - FIXME - DEAD code elimination
+ * name:		be_interface.c
  *
  * desc:		bot library interface
  *
@@ -58,7 +58,7 @@ botlib_globals_t botlibglobals;
 botlib_export_t be_botlib_export;
 botlib_import_t botimport;
 //
-int bot_developer;
+int botDeveloper;
 //true if the library is setup
 int botlibsetup = false;
 
@@ -137,14 +137,14 @@ int Export_BotLibSetup(void)
 {
 	int		errnum;
 	
-	bot_developer = LibVarGetValue("bot_developer");
-  memset( &botlibglobals, 0, sizeof(botlibglobals) ); // bk001207 - init
+	botDeveloper = LibVarGetValue("bot_developer");
+ 	memset( &botlibglobals, 0, sizeof(botlibglobals) );
 	//initialize byte swapping (litte endian etc.)
 //	Swap_Init();
 	Log_Open("botlib.log");
 	//
 	botimport.Print(PRT_MESSAGE, "------- BotLib Initialization -------\n");
-	//
+
 	botlibglobals.maxclients = (int) LibVarValue("maxclients", "128");
 	botlibglobals.maxentities = (int) LibVarValue("maxentities", "1024");
 
@@ -215,7 +215,7 @@ int Export_BotLibShutdown(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-int Export_BotLibVarSet(char *var_name, char *value)
+int Export_BotLibVarSet(const char *var_name, const char *value)
 {
 	LibVarSet(var_name, value);
 	return BLERR_NOERROR;
@@ -226,13 +226,12 @@ int Export_BotLibVarSet(char *var_name, char *value)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-int Export_BotLibVarGet(char *var_name, char *value, int size)
+int Export_BotLibVarGet(const char *var_name, char *value, int size)
 {
 	char *varvalue;
 
 	varvalue = LibVarGetString(var_name);
-	strncpy(value, varvalue, size-1);
-	value[size-1] = '\0';
+	Q_strncpyz(value, varvalue, size);
 	return BLERR_NOERROR;
 } //end of the function Export_BotLibVarGet
 //===========================================================================
@@ -300,7 +299,7 @@ void ElevatorBottomCenter(aas_reachability_t *reach, vec3_t bottomcenter);
 int BotGetReachabilityToGoal(vec3_t origin, int areanum,
 									  int lastgoalareanum, int lastareanum,
 									  int *avoidreach, float *avoidreachtimes, int *avoidreachtries,
-									  bot_goal_t *goal, int travelflags, int movetravelflags,
+									  bot_goal_t *goal, int travelflags,
 									  struct bot_avoidspot_s *avoidspots, int numavoidspots, int *flags);
 
 int AAS_PointLight(vec3_t origin, int *red, int *green, int *blue);
@@ -523,7 +522,7 @@ int BotExportTest(int parm0, char *parm1, vec3_t parm2, vec3_t parm3)
 		reachnum = BotGetReachabilityToGoal(origin, newarea,
 									  lastgoalareanum, lastareanum,
 									  avoidreach, avoidreachtimes, avoidreachtries,
-									  &goal, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP,
+									  &goal, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP,
 									  NULL, 0, &resultFlags);
 		AAS_ReachabilityFromNum(reachnum, &reach);
 		AAS_ShowReachability(&reach);
@@ -542,7 +541,7 @@ int BotExportTest(int parm0, char *parm1, vec3_t parm2, vec3_t parm3)
 			reachnum = BotGetReachabilityToGoal(curorigin, curarea,
 										  lastgoalareanum, lastareanum,
 										  avoidreach, avoidreachtimes, avoidreachtries,
-										  &goal, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP,
+										  &goal, TFL_DEFAULT|TFL_FUNCBOB|TFL_ROCKETJUMP,
 										  NULL, 0, &resultFlags);
 			AAS_ReachabilityFromNum(reachnum, &reach);
 			AAS_ShowReachability(&reach);
@@ -846,9 +845,9 @@ GetBotLibAPI
 ============
 */
 botlib_export_t *GetBotLibAPI(int apiVersion, botlib_import_t *import) {
-	assert(import);   // bk001129 - this wasn't set for baseq3/
-  botimport = *import;
-  assert(botimport.Print);   // bk001129 - pars pro toto
+	assert(import);
+	botimport = *import;
+	assert(botimport.Print);
 
 	Com_Memset( &be_botlib_export, 0, sizeof( be_botlib_export ) );
 

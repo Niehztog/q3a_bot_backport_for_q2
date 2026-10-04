@@ -247,11 +247,12 @@ typedef enum {
 
 /* configstring bases -- trap_GetConfigstring/trap_SetConfigstring are
  * short-circuited in ai_q2_shim.c (see there), so the values only need to
- * keep the ranges apart. CS_SOUNDS is NOT defined here: the real one
- * (botlib/be_aas_def.h, already included above) would conflict -- reuse it
- * as-is. The player range follows the sound range, as in Q3's layout:
- * BotCheckEvents asks for CS_SOUNDS + a sound index (ai_q2_shim.c serves
- * the powerup respawn sound). */
+ * keep the ranges apart. CS_SOUNDS is where botlib/be_aas_def.h had it
+ * (CS_SCORES 32, then the client and model ranges) until ioquake3 removed
+ * that header's unused configstring code. The player range follows the
+ * sound range, as in Q3's layout: BotCheckEvents asks for CS_SOUNDS + a
+ * sound index (ai_q2_shim.c serves the powerup respawn sound). */
+#define CS_SOUNDS		(32+MAX_CLIENTS+MAX_MODELS)
 #define CS_PLAYERS		(CS_SOUNDS+MAX_SOUNDS)
 #define CS_BOTINFO		(CS_PLAYERS+MAX_CLIENTS)
 
