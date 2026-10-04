@@ -604,11 +604,14 @@ extern int maxclients;
 #define trap_EA_Use				EA_Use
 #define trap_EA_View				EA_View
 
-/* Chat */
+/* Chat. BotFindMatch and BotReplaceSynonyms go through ai_q2_shim.c, which
+ * keeps each answer for the bots that read a chat line after the first. */
+int  Q2Shim_BotFindMatch(char *str, bot_match_t *match, unsigned long int context);
+void Q2Shim_BotReplaceSynonyms(char *string, unsigned long int context);
 #define trap_BotAllocChatState		BotAllocChatState
 #define trap_BotChatLength			BotChatLength
 #define trap_BotEnterChat			BotEnterChat
-#define trap_BotFindMatch			BotFindMatch
+#define trap_BotFindMatch			Q2Shim_BotFindMatch
 #define trap_BotFreeChatState		BotFreeChatState
 #define trap_BotGetChatMessage		BotGetChatMessage
 #define trap_BotInitialChat			BotInitialChat
@@ -621,7 +624,7 @@ extern int maxclients;
 #define trap_BotReplyChat			BotReplyChat
 #define trap_BotSetChatGender		BotSetChatGender
 #define trap_BotSetChatName			BotSetChatName
-#define trap_BotReplaceSynonyms		BotReplaceSynonyms
+#define trap_BotReplaceSynonyms		Q2Shim_BotReplaceSynonyms
 #define trap_BotLoadChatFile			BotLoadChatFile
 #define trap_UnifyWhiteSpaces		UnifyWhiteSpaces
 

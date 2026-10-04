@@ -728,11 +728,37 @@ static void Q3Trace_Adapter(bsp_trace_t *trace, vec3_t start, vec3_t mins,
  * stops at the world, and another entity has its own test. Reporting those
  * hits made every area with an item or a player collide with the world
  * geometry, on AAS plane 0 (AAS_AreaEntityCollision knows no plane), which
- * threw off the on-ground tests and the movement and aim predictions there. */
+ * threw off the on-ground tests and the movement and aim predictions there.
+ *
+ * Before tracing, what the world trace could report as this entity at all.
+ * The engine clips nothing SOLID_NOT or SOLID_TRIGGER, and a SOLID_BBOX entity
+ * as a box of CONTENTS_MONSTER (CM_HeadnodeForBox), which is Q3's
+ * CONTENTS_BODY; the AAS asks with CONTENTS_SOLID|CONTENTS_PLAYERCLIP
+ * (be_aas_sample.c AAS_AreaEntityCollision). So of the items, players and
+ * missiles AAS_UpdateEntity links into its areas none can be hit, and only a
+ * brush model is worth a trace of the whole world -- Gladiator's
+ * AAS_EntityCollision likewise tests nothing but SOLID_BBOX and SOLID_BSP
+ * entities, in the library. Tracing them all was BotGapDistance's 13 traces
+ * a frame times every entity in every area each crosses, for every walking
+ * bot: with 32 bots the frames where they bunched up at items spent ~15 ms
+ * in it. The solid is the one the game sent this frame. */
 static void Q3EntityTrace_Adapter(bsp_trace_t *trace, vec3_t start, vec3_t mins,
                                    vec3_t maxs, vec3_t end,
                                    int entnum, int contentmask)
 {
+    int solid;
+
+    if (entnum >= 0 && entnum < aasworld.maxentities && aasworld.entities) {
+        solid = aasworld.entities[entnum].i.solid;
+        if (solid == SOLID_NOT || solid == SOLID_TRIGGER ||
+            (solid == SOLID_BBOX && !(contentmask & CONTENTS_BODY))) {
+            Com_Memset(trace, 0, sizeof(*trace));
+            trace->fraction = 1;
+            VectorCopy(end, trace->endpos);
+            trace->ent = ENTITYNUM_NONE;
+            return;
+        }
+    }
     *trace = q2import.Trace(start, mins, maxs, end, 0, Q3ContentMaskToQ2(contentmask));
     trace->ent = Q2_EdictToEntity(trace->ent);
     if (trace->ent != entnum) {
@@ -801,26 +827,57 @@ static void Q2_BSPClusterPVS(int cluster)
  * cluster (in solid) sees nothing and is seen by nothing, a map without
  * visibility data sees everything. Unlike the engine's PF_inPVS it does not
  * look at area portals (closed doors): the game does not tell the botlib
- * their state. */
-static int Q3inPVS_Adapter(vec3_t p1, vec3_t p2)
+ * their state.
+ *
+ * In two halves, the cluster of a point and whether two clusters see each
+ * other, for the snapshot (ai_q2_shim.c Q2Shim_BuildSnapshot): it tests every
+ * entity against one bot's eye, for every bot, every frame, and walking the
+ * tree for both points of each pair was 32 bots x ~300 entities x 2 descents
+ * a frame -- over 40% of a 32-bot server's CPU. Q3's server
+ * keeps an entity's clusters from the time it links the entity and only tests
+ * a bit; the snapshot now keeps each entity's cluster from the time its
+ * origin is set. Q2_CLUSTER_ANY is a point the tree cannot place (no tree, no
+ * visibility lump, a broken tree), which sees everything, even a point in
+ * solid; Q2_CLUSTER_OUTSIDE is a cluster past the visibility lump, which sees
+ * everything but a point in solid. The order of the tests is the old single
+ * function's. */
+#define Q2_CLUSTER_SOLID    -1
+#define Q2_CLUSTER_ANY      -2
+#define Q2_CLUSTER_OUTSIDE  -3
+
+int Q2_PointCluster(vec3_t p)
 {
-    int leaf1, leaf2, cluster1, cluster2;
+    int leaf, cluster;
 
     if (!q2_bsp_numleafs || !q2_bsp_vis)
+        return Q2_CLUSTER_ANY;
+    leaf = Q2_BSPPointLeaf(p);
+    if (leaf < 0)
+        return Q2_CLUSTER_ANY;
+    cluster = q2_bsp_leafs[leaf].cluster;
+    if (cluster < 0)
+        return Q2_CLUSTER_SOLID;
+    if (cluster >= q2_bsp_vis[0])
+        return Q2_CLUSTER_OUTSIDE;
+    return cluster;
+}
+
+int Q2_ClustersVisible(int cluster1, int cluster2)
+{
+    if (cluster1 == Q2_CLUSTER_ANY || cluster2 == Q2_CLUSTER_ANY)
         return true;
-    leaf1 = Q2_BSPPointLeaf(p1);
-    leaf2 = Q2_BSPPointLeaf(p2);
-    if (leaf1 < 0 || leaf2 < 0)
-        return true;
-    cluster1 = q2_bsp_leafs[leaf1].cluster;
-    cluster2 = q2_bsp_leafs[leaf2].cluster;
-    if (cluster1 < 0 || cluster2 < 0)
+    if (cluster1 == Q2_CLUSTER_SOLID || cluster2 == Q2_CLUSTER_SOLID)
         return false;
-    if (cluster1 >= q2_bsp_vis[0] || cluster2 >= q2_bsp_vis[0])
+    if (cluster1 == Q2_CLUSTER_OUTSIDE || cluster2 == Q2_CLUSTER_OUTSIDE)
         return true;
     if (cluster1 != q2_bsp_pvscluster)
         Q2_BSPClusterPVS(cluster1);
     return (q2_bsp_pvsrow[cluster2 >> 3] >> (cluster2 & 7)) & 1;
+}
+
+static int Q3inPVS_Adapter(vec3_t p1, vec3_t p2)
+{
+    return Q2_ClustersVisible(Q2_PointCluster(p1), Q2_PointCluster(p2));
 }
 
 static char *Q3BSPEntityData_Callback(void)
@@ -1212,6 +1269,9 @@ static int Q2BotSetupLibrary(void)
     errnum = Export_BotLibSetup();
     if (errnum != BLERR_NOERROR)
         return errnum;
+    /* the chat files are loaded now: the Q3 AI's game state forgets the
+     * answers it kept from any it had before (ai_q2_shim.c) */
+    Q2Shim_Reset();
     /* the game set "maxclients" in BotInitLibrary, before this */
     q2_maxclients = (int)LibVarGetValue("maxclients");
     /* Q3's own AI setup (game_q3/ai_main.c): registers the ai_main.c cvars.
@@ -1228,6 +1288,8 @@ static int Q2BotShutdownLibrary(void)
      * refusal, say) by shutting it down: say nothing more about it. */
     if (!botlibglobals.botlibsetup)
         return Q2_BLERR_LIBRARYNOTSETUP;
+    /* and with the chat files gone, so are the answers kept from them */
+    Q2Shim_Reset();
     return Export_BotLibShutdown();
 }
 
@@ -2335,6 +2397,32 @@ static void Q2BotUsePowerups(bot_state_t *bs, int client)
     }
 }
 
+/* A bot the AI does not steer this frame coasts: standing to type a chat,
+ * a goal reached, a node that does not move. From the 300 ups of a run Q2's
+ * friction takes ~35 units to stop it, and where that runs off a ledge or
+ * onto a bank too steep to stand on -- at q2dm7's slime pools, say -- the
+ * bot slid in while the AI thought it was standing still. Q3's movement
+ * code looks at momentum nowhere, so here it is looked at for the frames no
+ * movement code ran: the brake of be_ai_move.c's walking (BotMomentumBrake)
+ * with no command. A bot in the air, swimming, jumping or using the
+ * keyboard-style moves (ladders, water jumps) is left alone. */
+extern int BotMomentumBrake(vec3_t origin, vec3_t velocity, int entnum, int client,
+                            vec3_t cmddir, float cmdspeed);
+
+static void Q2BotCoastBrake(bot_state_t *bs, float thinktime)
+{
+    bot_input_t bi;
+
+    if (bs->cur_ps.pm_type != Q3PM_NORMAL || bs->inventory[INVENTORY_HEALTH] <= 0) return;
+    if (bs->cur_ps.groundEntityNum == ENTITYNUM_NONE) return;
+    if (AAS_Swimming(bs->origin)) return;
+    EA_GetInput(bs->client, thinktime, &bi);
+    if (bi.speed > 0) return;
+    if (bi.actionflags & (ACTION_JUMP|ACTION_DELAYEDJUMP|ACTION_MOVEFORWARD|
+                          ACTION_MOVEBACK|ACTION_MOVELEFT|ACTION_MOVERIGHT)) return;
+    BotMomentumBrake(bs->origin, bs->cur_ps.velocity, bs->entitynum, bs->client, vec3_origin, 0);
+}
+
 static int Q2BotAI(int client, float thinktime)
 {
     bot_state_t   *bs;
@@ -2441,6 +2529,7 @@ static int Q2BotAI(int client, float thinktime)
      * q3input.viewangles below is already the fully-resolved answer; no
      * separate priority reconstruction is needed on this side of the
      * bridge. --- */
+    Q2BotCoastBrake(bs, thinktime);
     Com_Memset(&q3input, 0, sizeof(q3input));
     EA_GetInput(client, thinktime, &q3input);
     q2_lastattack[client] = (q3input.actionflags & 0x0000001) != 0;  /* ACTION_ATTACK */

@@ -314,6 +314,133 @@ int trap_BotGetServerCommand(int clientNum, char *message, int size)
 }
 
 /* ================================================================== */
+/*  Chat matching, once per line.                                      */
+/*                                                                      */
+/*  Every bot reads every chat line (BotCheckConsoleMessages,           */
+/*  ai_dmq3.c) and asks the same questions of it: BotFindMatch as a     */
+/*  reply chat, the synonyms replaced, BotFindMatch as an order         */
+/*  (BotMatchMessage, ai_cmd.c) and as a reply chat again. Each answer  */
+/*  depends on the text, the context, and the match templates and       */
+/*  synonyms the library loads at setup -- nothing else. With 32 bots   */
+/*  a line was ~230 us of template matching per bot, 32 times over, and */
+/*  the frames where several bots read one were most of the slowest     */
+/*  frames left. The answers are kept here, for the bots that read a    */
+/*  line after the first; Q2Shim_Reset forgets them, and the library    */
+/*  calls it when it loads or frees the chat files.                     */
+/* ================================================================== */
+
+#define Q2SHIM_CHATMEMO		64
+
+typedef struct {
+	int					valid;
+	unsigned long int	context;
+	char				text[MAX_MESSAGE_SIZE];
+	int					result;
+	bot_match_t			match;
+	unsigned char		written[sizeof(bot_match_t)];	/* the bytes of match BotFindMatch set */
+} q2shim_matchmemo_t;
+
+typedef struct {
+	int					valid;
+	unsigned long int	context;
+	char				text[MAX_MESSAGE_SIZE];
+	char				replaced[MAX_MESSAGE_SIZE];
+} q2shim_synonymmemo_t;
+
+static q2shim_matchmemo_t	q2shim_matchmemo[Q2SHIM_CHATMEMO];
+static q2shim_synonymmemo_t	q2shim_synonymmemo[Q2SHIM_CHATMEMO];
+static int					q2shim_nextmatchmemo, q2shim_nextsynonymmemo;
+
+static void Q2Shim_ResetChatMemo(void)
+{
+	int i;
+
+	for (i = 0; i < Q2SHIM_CHATMEMO; i++) {
+		q2shim_matchmemo[i].valid = false;
+		q2shim_synonymmemo[i].valid = false;
+	}
+	q2shim_nextmatchmemo = q2shim_nextsynonymmemo = 0;
+}
+
+/* BotFindMatch sets match->string and the variable offsets, and the type,
+ * subtype and lengths of a template that matches, and leaves the rest of
+ * *match as the caller had it: the lengths a failed template set stay,
+ * type and subtype stay on no match. So a kept answer is the bytes the call
+ * set, found by running it on two differently filled copies -- the bytes
+ * that come out the same are the ones it set -- and a later call sets those
+ * bytes and no others, leaving *match exactly as BotFindMatch would. */
+int Q2Shim_BotFindMatch(char *str, bot_match_t *match, unsigned long int context)
+{
+	q2shim_matchmemo_t *memo;
+	bot_match_t other;
+	unsigned char *set, *in;
+	int i;
+
+	/* a text this long BotFindMatch's strncpy leaves unterminated */
+	if (strlen(str) >= MAX_MESSAGE_SIZE)
+		return BotFindMatch(str, match, context);
+	for (i = 0; i < Q2SHIM_CHATMEMO; i++) {
+		memo = &q2shim_matchmemo[i];
+		if (memo->valid && memo->context == context && !strcmp(memo->text, str))
+			break;
+	}
+	if (i >= Q2SHIM_CHATMEMO) {
+		memo = &q2shim_matchmemo[q2shim_nextmatchmemo];
+		q2shim_nextmatchmemo = (q2shim_nextmatchmemo + 1) % Q2SHIM_CHATMEMO;
+		memo->valid = false;
+		Com_Memset(&memo->match, 0x55, sizeof(memo->match));
+		Com_Memset(&other, 0xaa, sizeof(other));
+		memo->result = BotFindMatch(str, &memo->match, context);
+		if (BotFindMatch(str, &other, context) != memo->result)
+			return BotFindMatch(str, match, context);
+		set = (unsigned char *)&memo->match;
+		in = (unsigned char *)&other;
+		for (i = 0; i < (int)sizeof(bot_match_t); i++)
+			memo->written[i] = (set[i] == in[i]);
+		memo->context = context;
+		strcpy(memo->text, str);
+		memo->valid = true;
+	}
+	set = (unsigned char *)&memo->match;
+	in = (unsigned char *)match;
+	for (i = 0; i < (int)sizeof(bot_match_t); i++) {
+		if (memo->written[i])
+			in[i] = set[i];
+	}
+	return memo->result;
+}
+
+/* BotReplaceSynonyms replaces in place; a kept answer is the text it came
+ * to. A text that would come to MAX_MESSAGE_SIZE or more is not kept. */
+void Q2Shim_BotReplaceSynonyms(char *string, unsigned long int context)
+{
+	q2shim_synonymmemo_t *memo;
+	int i;
+
+	if (strlen(string) >= MAX_MESSAGE_SIZE) {
+		BotReplaceSynonyms(string, context);
+		return;
+	}
+	for (i = 0; i < Q2SHIM_CHATMEMO; i++) {
+		memo = &q2shim_synonymmemo[i];
+		if (memo->valid && memo->context == context && !strcmp(memo->text, string)) {
+			strcpy(string, memo->replaced);
+			return;
+		}
+	}
+	memo = &q2shim_synonymmemo[q2shim_nextsynonymmemo];
+	q2shim_nextsynonymmemo = (q2shim_nextsynonymmemo + 1) % Q2SHIM_CHATMEMO;
+	memo->valid = false;
+	strcpy(memo->text, string);
+	BotReplaceSynonyms(string, context);
+	if (strlen(string) < MAX_MESSAGE_SIZE) {
+		memo->context = context;
+		strcpy(memo->replaced, string);
+		memo->valid = true;
+	}
+}
+
+/* ================================================================== */
 /*  Q3-shaped game state.                                              */
 /*                                                                      */
 /*  Q3's BotCheckSnapshot (ai_dmq3.c) walks the entities of the bot's   */
@@ -350,6 +477,17 @@ static int		q2shim_snapshot[MAX_GENTITIES];
 static int		q2shim_snapshotcount;
 static int		q2shim_snapshotclient = -1;
 
+/* Each entity's PVS cluster (be_interface_q2.c Q2_PointCluster), taken where
+ * its origin is set -- Q2Shim_UpdateEntity and Q2Shim_TempEvent are the only
+ * two places that set it -- so a snapshot walks the BSP tree once for the
+ * eye of its bot instead of twice for every entity. And the highest entity
+ * number the game sent this frame: below the temporary events nothing above
+ * it is in use, and the snapshot need not look there. */
+static int		q2shim_cluster[MAX_GENTITIES];
+static int		q2shim_lastentity = -1;
+extern int Q2_PointCluster(vec3_t p);
+extern int Q2_ClustersVisible(int cluster1, int cluster2);
+
 /* The powerups whose respawn Q3 announces to everyone with
  * "sound/items/poweruprespawn.wav" (items of type IT_POWERUP there): the Q2
  * and mission pack ones in their role. BotGoForPowerups (ai_dmq3.c) stops
@@ -373,6 +511,8 @@ void Q2Shim_Reset(void)
 	Com_Memset(q2shim_tempexpire, 0, sizeof(q2shim_tempexpire));
 	q2shim_lastframetime = 0;
 	q2shim_snapshotclient = -1;
+	q2shim_lastentity = -1;
+	Q2Shim_ResetChatMemo();
 }
 
 /* What the game told of the last damage a client took (be_interface_q2.c
@@ -408,6 +548,7 @@ void Q2Shim_StartFrame(void)
 		g_entities_compat[i].inuse = false;
 		g_entities_compat[i].r.linked = false;
 	}
+	q2shim_lastentity = -1;
 	for (i = 0; i < Q2SHIM_TEMPENTITIES; i++) {
 		if (q2shim_tempexpire[i] <= now) {
 			g_entities_compat[Q2SHIM_FIRSTTEMP + i].inuse = false;
@@ -438,6 +579,7 @@ static gentity_t *Q2Shim_TempEvent(int event, vec3_t origin, int broadcast)
 		VectorCopy(origin, ent->r.currentOrigin);
 		VectorCopy(origin, ent->s.pos.trBase);
 	}
+	q2shim_cluster[Q2SHIM_FIRSTTEMP + slot] = Q2_PointCluster(ent->r.currentOrigin);
 	ent->eventTime = ++q2shim_eventtime;
 	q2shim_tempexpire[slot] = AAS_Time() + EVENT_VALID_MSEC * 0.001f;
 	return ent;
@@ -504,6 +646,9 @@ void Q2Shim_UpdateEntity(int q2ent, int type, int eflags, int powerups,
 	ent->r.linked = true;
 	ent->r.svFlags = bs ? SVF_BOT : 0;
 	VectorCopy(origin, ent->r.currentOrigin);
+	q2shim_cluster[num] = Q2_PointCluster(ent->r.currentOrigin);
+	if (num > q2shim_lastentity)
+		q2shim_lastentity = num;
 	VectorCopy(mins, ent->r.mins);
 	VectorCopy(maxs, ent->r.maxs);
 	ent->s.number = num;
@@ -543,13 +688,14 @@ void Q2Shim_UpdateEntity(int q2ent, int type, int eflags, int powerups,
 }
 
 /* Q3's snapshot of a client: the entities in the PVS of its view, and the
- * broadcast ones, never its own. BotCheckSnapshot asks for sequence 0 first. */
+ * broadcast ones, never its own, in the order of their numbers.
+ * BotCheckSnapshot asks for sequence 0 first. */
 static void Q2Shim_BuildSnapshot(int clientNum)
 {
 	bot_state_t *bs = NULL;
 	gentity_t *ent;
 	vec3_t eye;
-	int i;
+	int i, eyecluster;
 
 	q2shim_snapshotcount = 0;
 	q2shim_snapshotclient = clientNum;
@@ -559,12 +705,17 @@ static void Q2Shim_BuildSnapshot(int clientNum)
 		return;
 	VectorCopy(bs->cur_ps.origin, eye);
 	eye[2] += bs->cur_ps.viewheight;
+	eyecluster = Q2_PointCluster(eye);
 	for (i = 0; i < MAX_GENTITIES; i++) {
+		/* the game's entities, then the temporary events */
+		if (i > q2shim_lastentity && i < Q2SHIM_FIRSTTEMP)
+			i = Q2SHIM_FIRSTTEMP;
 		ent = &g_entities_compat[i];
 		if (!ent->inuse || !ent->r.linked) continue;
 		if (ent->r.svFlags & SVF_NOCLIENT) continue;
 		if (i == clientNum) continue;
-		if (!(ent->r.svFlags & SVF_BROADCAST) && !botimport.inPVS(eye, ent->r.currentOrigin))
+		if (!(ent->r.svFlags & SVF_BROADCAST) &&
+			!Q2_ClustersVisible(eyecluster, q2shim_cluster[i]))
 			continue;
 		q2shim_snapshot[q2shim_snapshotcount++] = i;
 	}

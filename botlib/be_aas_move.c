@@ -429,6 +429,39 @@ void AAS_ApplyFriction(vec3_t vel, float friction, float stopspeed,
 	} //end if
 } //end of the function AAS_ApplyFriction
 //===========================================================================
+// the horizontal velocity of a client on the ground after one frame of the
+// given movement command (friction, then acceleration), and the distance it
+// coasts after that until friction stops it
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//===========================================================================
+float AAS_GroundMoveFrame(vec3_t velocity, vec3_t cmddir, float cmdspeed, float frametime, vec3_t newvelocity)
+{
+	vec3_t wishdir;
+	float wishspeed, speed, control, dist;
+
+	VectorCopy(velocity, newvelocity);
+	newvelocity[2] = 0;
+	AAS_ApplyFriction(newvelocity, aassettings.phys_friction, aassettings.phys_stopspeed, frametime);
+	VectorCopy(cmddir, wishdir);
+	wishdir[2] = 0;
+	wishspeed = (VectorNormalize(wishdir) > 0) ? cmdspeed : 0;
+	if (wishspeed > aassettings.phys_maxwalkvelocity) wishspeed = aassettings.phys_maxwalkvelocity;
+	if (wishspeed > 0) AAS_Accelerate(newvelocity, frametime, wishdir, wishspeed, aassettings.phys_walkaccelerate);
+	newvelocity[2] = 0;
+	dist = 0;
+	for (speed = VectorLength(newvelocity); speed > 1; )
+	{
+		control = speed < aassettings.phys_stopspeed ? aassettings.phys_stopspeed : speed;
+		speed -= frametime * control * aassettings.phys_friction;
+		if (speed < 0) speed = 0;
+		dist += speed * frametime;
+	} //end for
+	return dist;
+} //end of the function AAS_GroundMoveFrame
+//===========================================================================
 //
 // Parameter:			-
 // Returns:				-
