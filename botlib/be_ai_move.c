@@ -1579,6 +1579,7 @@ bot_moveresult_t BotFinishTravel_BarrierJump(bot_movestate_t *ms, aas_reachabili
 		hordir[0] = reach->end[0] - ms->origin[0];
 		hordir[1] = reach->end[1] - ms->origin[1];
 		hordir[2] = 0;
+		VectorNormalize(hordir);
 		//
 		BotCheckBlocked(ms, hordir, true, &result);
 		//
@@ -1670,6 +1671,7 @@ bot_moveresult_t BotFinishTravel_WaterJump(bot_movestate_t *ms, aas_reachability
 	dir[0] += crandom() * 10;
 	dir[1] += crandom() * 10;
 	dir[2] += 70 + crandom() * 10;
+	VectorNormalize(dir);
 	//elemantary actions
 	EA_Move(ms->client, dir, 400);
 	//set the ideal view angles
@@ -1807,6 +1809,7 @@ bot_moveresult_t BotFinishTravel_WalkOffLedge(bot_movestate_t *ms, aas_reachabil
 		VectorCopy(dir, hordir);
 		hordir[2] = 0;
 		//
+		VectorNormalize(hordir);
 		speed = 400;
 	} //end if
 	//
@@ -3308,6 +3311,7 @@ bot_moveresult_t BotTravel_JumpPad(bot_movestate_t *ms, aas_reachability_t *reac
 	hordir[0] = reach->start[0] - ms->origin[0];
 	hordir[1] = reach->start[1] - ms->origin[1];
 	hordir[2] = 0;
+	VectorNormalize(hordir);
 	//
 	BotCheckBlocked(ms, hordir, true, &result);
 	//elemantary action move in direction

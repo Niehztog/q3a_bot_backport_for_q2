@@ -2621,8 +2621,13 @@ int AAS_Reachability_Ladder(int area1num, int area2num)
 		VectorMA(area1point, -32, dir, area1point);
 		VectorMA(area2point, 32, dir, area2point);
 		//
-		ladderface1vertical = fabsf(DotProduct(plane1->normal, up)) < 0.1;
-		ladderface2vertical = fabsf(DotProduct(plane2->normal, up)) < 0.1;
+		//Q2: id's tests here were abs() < 0.1, which truncates to an int and
+		//so took every ladder face that is not flat for a vertical one, and
+		//every shared edge less than a unit high for a flat one. Quake II
+		//climbs a ladder at any slope and its maps have sloped ones, which
+		//ioquake3's fabsf() < 0.1 cut off from the rest of the map: keep id's.
+		ladderface1vertical = fabsf(DotProduct(plane1->normal, up)) < 1;
+		ladderface2vertical = fabsf(DotProduct(plane2->normal, up)) < 1;
 		//there's only reachability between vertical ladder faces
 		if (!ladderface1vertical && !ladderface2vertical) return false;
 		//if both vertical ladder faces
@@ -2630,7 +2635,7 @@ int AAS_Reachability_Ladder(int area1num, int area2num)
 					//and the ladder faces do not make a sharp corner
 					&& DotProduct(plane1->normal, plane2->normal) > 0.7
 					//and the shared edge is not too vertical
-					&& fabsf(DotProduct(sharededgevec, up)) < 0.7)
+					&& fabsf(DotProduct(sharededgevec, up)) < 1)
 		{
 			//create a new reachability link
 			lreach = AAS_AllocReachability();
@@ -2755,7 +2760,7 @@ int AAS_Reachability_Ladder(int area1num, int area2num)
 				if (face2->faceflags & FACE_LADDER)
 				{
 					plane2 = &aasworld.planes[face2->planenum];
-					if (fabsf(DotProduct(plane2->normal, up)) < 0.1) break;
+					if (fabsf(DotProduct(plane2->normal, up)) < 1) break;
 				} //end if
 			} //end for
 			//if from another area without vertical ladder faces
@@ -4365,7 +4370,7 @@ void AAS_Reachability_JumpPad(void)
 					//direction towards the face center
 					VectorSubtract(facecenter, areastart, dir);
 					dir[2] = 0;
-					//hordist = VectorNormalize(dir);
+					VectorNormalize(dir);
 					//if (hordist < 1.6 * facecenter[2] - areastart[2])
 					{
 						//get command movement
