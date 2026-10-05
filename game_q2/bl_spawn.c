@@ -249,7 +249,17 @@ qboolean BotMoveToFreeClientEdict(edict_t *bot)
 	//if there isn't a free client edict available
 	if (!newcl) return false;
 	//copy the bot to the new client edict
+	//Q2 port fix: unlink the bot first, the copy would otherwise duplicate the
+	//engine's area links and clearing the old edict below would zero a node
+	//its lists still use (a crash in SV_AreaEdicts)
+	gi.unlinkentity(bot);
 	memcpy(newcl, bot, sizeof(edict_t));
+	//Q2 port fix: the copy overwrote the new edict's own gclient_t pointer
+	//with the old slot's, so both shared the one cleared below, and its
+	//entity number, which the engine otherwise repairs with a developer warning
+	newcl->client = &game.clients[newcl-g_edicts-1];
+	newcl->s.number = newcl - g_edicts;
+	gi.linkentity(newcl);
 	//copy the contents of the g_client_t structure
 	memcpy(newcl->client, bot->client, sizeof(gclient_t));
 	//copy bot state

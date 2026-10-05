@@ -1065,7 +1065,9 @@ void Info_RemoveKey (char *s, char *key)
 
 		if (!strcmp (key, pkey) )
 		{
-			strcpy (start, s);	// remove this part
+			// Q2 port fix: the copy overlaps, which strcpy leaves undefined
+			// (glibc garbles it); ioquake3 and yquake2 use memmove
+			memmove (start, s, strlen (s) + 1);	// remove this part
 			return;
 		}
 

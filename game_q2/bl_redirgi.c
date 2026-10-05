@@ -705,7 +705,9 @@ void Bot_unicast(edict_t *ent, qboolean reliable)
 		ptr = NULL;
 		*ptr = 0;
 #endif //BOT_DEBUG
-		gi.dprintf("WARNING: tried to use unicast for a bot");
+		//Q2 port fix: end the line, Rogue's chainfist smoke gets here for a
+		//bot and the warning swallowed the next console line
+		gi.dprintf("WARNING: tried to use unicast for a bot\n");
 		BotClearMessage();
 		return;
 	} //end else

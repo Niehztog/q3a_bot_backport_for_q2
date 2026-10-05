@@ -230,7 +230,9 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 //
 // print the message
 //
-	if ((ent->message) && !(activator->svflags & SVF_MONSTER))
+	// Q2 port fix: the activator can be NULL (see the Think_Delay warning
+	// above), as when a blocked func_door fires its targets
+	if ((ent->message) && activator && !(activator->svflags & SVF_MONSTER))
 	{
 		gi.centerprintf (activator, "%s", ent->message);
 		if (ent->noise_index)
@@ -566,6 +568,18 @@ Marks the edict as free
 */
 void G_FreeEdict (edict_t *ed)
 {
+#ifdef ZOID
+	// Q2 port fix: a mover's blocked() frees an in-flight grapple through
+	// BecomeExplosion1, bypassing CTFResetGrapple, so the owner's ctf_grapple
+	// kept pointing here and the next CTFGrapplePull read the zeroed owner.
+	// Compare the pointer: CTFFireGrapple gives the hook no classname.
+	if (ed->owner && ed->owner->client && ed->owner->client->ctf_grapple == ed)
+	{
+		ed->owner->client->ctf_grapple = NULL;
+		ed->owner->client->ctf_grapplestate = CTF_GRAPPLE_STATE_FLY;
+	}
+#endif //ZOID
+
 	gi.unlinkentity (ed);		// unlink from world
 
 	if ((ed - g_edicts) <= (maxclients->value + BODY_QUEUE_SIZE))

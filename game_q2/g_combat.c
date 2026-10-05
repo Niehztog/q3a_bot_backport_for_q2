@@ -553,6 +553,14 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	if (!targ->takedamage)
 		return;
 
+	// Q2 port fix: no path assigns a func_door's activator, so a blocked door
+	// fires its targets with NULL and a target_explosion it names arrives here
+	// through T_RadiusDamage with no attacker, which everything below reads.
+	// Q3's G_Damage substitutes the world entity in the same place; its client
+	// is NULL, so the attacker->client tests still mean "no player".
+	if (!attacker)
+		attacker = world;
+
 #ifdef ROGUE
 	sphere_notified = false;		// PGM
 #endif //ROGUE

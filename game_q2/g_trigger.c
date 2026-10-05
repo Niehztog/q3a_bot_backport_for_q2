@@ -224,6 +224,9 @@ void trigger_key_use (edict_t *self, edict_t *other, edict_t *activator)
 
 	if (!self->item)
 		return;
+	// Q2 port fix: a NULL activator (a blocked func_door) has no inventory
+	if (!activator)
+		return;
 	if (!activator->client)
 		return;
 

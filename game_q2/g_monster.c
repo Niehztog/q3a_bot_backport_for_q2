@@ -732,6 +732,10 @@ void monster_use (edict_t *self, edict_t *other, edict_t *activator)
 		return;
 	if (self->health <= 0)
 		return;
+	// Q2 port fix: a blocked func_door fires its targets with a NULL
+	// activator; without one there is nobody to get angry at
+	if (!activator)
+		return;
 	if (activator->flags & FL_NOTARGET)
 		return;
 	if (!(activator->client) && !(activator->monsterinfo.aiflags & AI_GOOD_GUY))
@@ -795,7 +799,8 @@ void monster_triggered_spawn_use (edict_t *self, edict_t *other, edict_t *activa
 	// we have a one frame delay here so we don't telefrag the guy who activated us
 	self->think = monster_triggered_spawn;
 	self->nextthink = level.time + FRAMETIME;
-	if (activator->client)
+	// Q2 port fix: a NULL activator (a blocked func_door) spawns it without an enemy
+	if (activator && activator->client)
 		self->enemy = activator;
 	self->use = monster_use;
 }
@@ -1092,7 +1097,8 @@ void stationarymonster_triggered_spawn_use (edict_t *self, edict_t *other, edict
 	// we have a one frame delay here so we don't telefrag the guy who activated us
 	self->think = stationarymonster_triggered_spawn;
 	self->nextthink = level.time + FRAMETIME;
-	if (activator->client)
+	// Q2 port fix: a NULL activator (a blocked func_door) spawns it without an enemy
+	if (activator && activator->client)
 		self->enemy = activator;
 	self->use = monster_use;
 }
