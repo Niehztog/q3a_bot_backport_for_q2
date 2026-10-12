@@ -2064,6 +2064,45 @@ int AAS_NextModelReachability(int num, int modelnum)
 	return 0;
 } //end of the function AAS_NextModelReachability
 //===========================================================================
+// marks every area the reachabilities lead to from the given area, by the
+// tests AAS_UpdateAreaRoutingCache makes but across clusters, so that no
+// route leads to an area left unmarked
+//
+// Parameter:			areanum		: start area
+//						travelflags	: travel flags of the routes
+//						reached		: numareas bytes, cleared
+//						queue		: numareas ints
+// Returns:				-
+// Changes Globals:		-
+//===========================================================================
+static void AAS_MarkReachableAreas(int areanum, int travelflags, byte *reached, int *queue)
+{
+	int i, head, tail, badtravelflags;
+	aas_areasettings_t *settings;
+	aas_reachability_t *reach;
+
+	//a route may cross do-not-enter areas if it starts or ends in one
+	badtravelflags = ~(travelflags | TFL_DONOTENTER);
+	reached[areanum] = true;
+	queue[0] = areanum;
+	head = 0;
+	tail = 1;
+	while (head < tail)
+	{
+		settings = &aasworld.areasettings[queue[head++]];
+		for (i = 0; i < settings->numreachableareas; i++)
+		{
+			reach = &aasworld.reachability[settings->firstreachablearea + i];
+			if (reached[reach->areanum]) continue;
+			if (AAS_TravelFlagForType_inline(reach->traveltype) & badtravelflags) continue;
+			if (aasworld.areasettings[reach->areanum].areaflags & AREA_DISABLED) continue;
+			if (AAS_AreaContentsTravelFlags_inline(reach->areanum) & badtravelflags) continue;
+			reached[reach->areanum] = true;
+			queue[tail++] = reach->areanum;
+		} //end for
+	} //end while
+} //end of the function AAS_MarkReachableAreas
+//===========================================================================
 //
 // Parameter:			-
 // Returns:				-
@@ -2071,19 +2110,26 @@ int AAS_NextModelReachability(int num, int modelnum)
 //===========================================================================
 int AAS_RandomGoalArea(int areanum, int travelflags, int *goalareanum, vec3_t goalorigin)
 {
-	int i, n, t;
+	int i, n, t, found, *queue;
+	byte *reached;
 	vec3_t start, end;
 	aas_trace_t trace;
 
 	//if the area has no reachabilities
 	if (!AAS_AreaReachability(areanum)) return false;
+	//Q2: a travel time to an area routes its whole cluster, which on a Quake II
+	//map can be most of the map: ask only for the areas a route can lead to
+	queue = (int *) GetClearedMemory(aasworld.numareas * (sizeof(int) + sizeof(byte)));
+	reached = (byte *) (queue + aasworld.numareas);
+	AAS_MarkReachableAreas(areanum, travelflags, reached, queue);
 	//
+	found = false;
 	n = aasworld.numareas * random();
 	for (i = 0; i < aasworld.numareas; i++)
 	{
 		if (n <= 0) n = 1;
 		if (n >= aasworld.numareas) n = 1;
-		if (AAS_AreaReachability(n))
+		if (reached[n] && AAS_AreaReachability(n))
 		{
 			t = AAS_AreaTravelTimeToGoalArea(areanum, aasworld.areas[areanum].center, n, travelflags);
 			//if the goal is reachable
@@ -2094,7 +2140,8 @@ int AAS_RandomGoalArea(int areanum, int travelflags, int *goalareanum, vec3_t go
 					*goalareanum = n;
 					VectorCopy(aasworld.areas[n].center, goalorigin);
 					//botimport.Print(PRT_MESSAGE, "found random goal area %d\n", *goalareanum);
-					return true;
+					found = true;
+					break;
 				} //end if
 				VectorCopy(aasworld.areas[n].center, start);
 				if (!AAS_PointAreaNum(start))
@@ -2109,14 +2156,16 @@ int AAS_RandomGoalArea(int areanum, int travelflags, int *goalareanum, vec3_t go
 						*goalareanum = n;
 						VectorCopy(trace.endpos, goalorigin);
 						//botimport.Print(PRT_MESSAGE, "found random goal area %d\n", *goalareanum);
-						return true;
+						found = true;
+						break;
 					} //end if
 				} //end if
 			} //end if
 		} //end if
 		n++;
 	} //end for
-	return false;
+	FreeMemory(queue);
+	return found;
 } //end of the function AAS_RandomGoalArea
 //===========================================================================
 //
