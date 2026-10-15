@@ -2093,6 +2093,8 @@ static void AAS_MarkReachableAreas(int areanum, int travelflags, byte *reached, 
 		for (i = 0; i < settings->numreachableareas; i++)
 		{
 			reach = &aasworld.reachability[settings->firstreachablearea + i];
+			//Q2: no route goes through area 0, which older meshes link ladders into
+			if (reach->areanum <= 0) continue;
 			if (reached[reach->areanum]) continue;
 			if (AAS_TravelFlagForType_inline(reach->traveltype) & badtravelflags) continue;
 			if (aasworld.areasettings[reach->areanum].areaflags & AREA_DISABLED) continue;

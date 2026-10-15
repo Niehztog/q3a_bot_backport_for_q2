@@ -2764,7 +2764,8 @@ int AAS_Reachability_Ladder(int area1num, int area2num)
 				} //end if
 			} //end for
 			//if from another area without vertical ladder faces
-			if (i >= area2->numfaces && area2num != area1num &&
+			//Q2: and from an area at all, since a trace ending in none gives area 0
+			if (area2num && i >= area2->numfaces && area2num != area1num &&
 						//the reachabilities shouldn't exist already
 						!AAS_ReachabilityExists(area1num, area2num) &&
 						!AAS_ReachabilityExists(area2num, area1num))
