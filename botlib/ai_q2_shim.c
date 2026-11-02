@@ -803,11 +803,15 @@ int G_ModelIndex(char *name)
 	return 0;
 }
 
+/* Quake III's game took this from a pool it emptied at every level (g_mem.c
+ * G_InitMemory), so nothing frees what it returns. Its one caller here is
+ * BotAISetupClient's bot state, and Q2_FreeBotStates (be_interface_q2.c)
+ * gives those back when the library shuts down: a new caller needs a free
+ * of its own. The game's memory, as everything else this library holds, so
+ * its accounting sees them (it used to be malloc's). */
 void *G_Alloc(int size)
 {
-	void *p = malloc((size_t)size);
-	if (p) memset(p, 0, (size_t)size);
-	return p;
+	return GetClearedMemory(size);
 }
 
 void G_CheckBotSpawn(void)

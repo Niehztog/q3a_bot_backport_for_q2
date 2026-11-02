@@ -22,7 +22,8 @@ Design overview
     - inPVS     : real PVS check from BSP visibility lump data
     - BSPEntityData: returns entity lump read from BSP file on disk
     - FS_*      : stdio backed, using basedir/gamedir LibVars
-    - HunkAlloc : mapped to GetMemory
+    - HunkAlloc : GetMemory, all freed at BotShutdownLibrary (Q3's
+                  Hunk_Clear at a level change)
 
 * Per-bot state (chatstate, goalstate, movestate, weaponstate) is
   allocated in BotSetupClient and freed in BotShutdownClient.
@@ -995,9 +996,50 @@ static int Q3AvailableMemory_Stub(void)
     return 0x800000;  /* 8 MB placeholder */
 }
 
+/* Quake III's botlib takes what lives as long as a level from its engine's
+ * hunk (botimport.HunkAlloc, GetHunkMemory in l_memory.c): the AAS file, the
+ * BSP entities, the AAS link heap and entity tables, the chat, weapon and item
+ * configs. It never frees a hunk block itself -- FreeMemory passes over them --
+ * because Quake III clears the whole hunk at a level change, right after the
+ * game has shut the botlib down (sv_init.c SV_SpawnServer:
+ * SV_ShutdownGameProgs, then Hunk_Clear). The game's memory has no such
+ * clear, so this adapter keeps a list of the blocks and frees them all in
+ * Q2BotShutdownLibrary, where Gladiator's botlib freed every block it still
+ * held (DumpMemory). Nothing used to free them: a game that loads this
+ * library for each map, as Colosseum does, kept every map's AAS file and
+ * tables, about 2.5 MB a map, until its 32-bit server ran out of memory. A
+ * game that keeps one setup over several maps (Colosseum with freebotlib 0)
+ * still holds every map's AAS file and BSP entities until that shutdown:
+ * Quake III never loaded two maps into one setup. */
+typedef union q2hunkblock_u {
+    union q2hunkblock_u *next;  /* the block allocated before this one */
+    unsigned char pad[16];      /* the payload as aligned as GetMemory's */
+} q2hunkblock_t;
+
+static q2hunkblock_t *q2_hunkblocks;
+
 static void *Q3HunkAlloc_Adapter(int size)
 {
-    return q2import.GetMemory(size);
+    q2hunkblock_t *block = q2import.GetMemory((int)sizeof(*block) + size);
+
+    if (!block)
+        return NULL;
+    block->next = q2_hunkblocks;
+    q2_hunkblocks = block;
+    return block + 1;
+}
+
+/* Quake III's Hunk_Clear, once Export_BotLibShutdown has let go of the
+ * blocks: it clears every pointer it kept into them. */
+static void Q2_HunkClear(void)
+{
+    q2hunkblock_t *block, *next;
+
+    for (block = q2_hunkblocks; block; block = next) {
+        next = block->next;
+        q2import.FreeMemory(block);
+    }
+    q2_hunkblocks = NULL;
 }
 
 /* ---- stdio-backed FS functions ---- */
@@ -1287,15 +1329,43 @@ static int Q2BotSetupLibrary(void)
     return BLERR_NOERROR;
 }
 
+/* The Q3 AI's bot states (game_q3/ai_main.c BotAISetupClient, through
+ * G_Alloc). BotAIShutdownClient only clears a state for the next bot in its
+ * slot; Quake III's game emptied the pool they came from at every level and
+ * forgot them (BotAISetup). Nothing freed them here, so a game that unloads
+ * this library each map left one behind, ~9 KB, for every slot that had
+ * held a bot. */
+static void Q2_FreeBotStates(void)
+{
+    int i;
+
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        if (botstates[i])
+            FreeMemory(botstates[i]);
+        botstates[i] = NULL;
+    }
+}
+
 static int Q2BotShutdownLibrary(void)
 {
+    int errnum;
+
     /* A game unloads a library whose setup failed (Q2BotSetupLibrary's
      * refusal, say) by shutting it down: say nothing more about it. */
     if (!botlibglobals.botlibsetup)
         return Q2_BLERR_LIBRARYNOTSETUP;
     /* and with the chat files gone, so are the answers kept from them */
     Q2Shim_Reset();
-    return Export_BotLibShutdown();
+    errnum = Export_BotLibShutdown();
+    Q2_FreeBotStates();
+    /* The last map's BSP tree and visibility. Reading the next map frees
+     * them, but a game that unloads this library between maps never reads
+     * one: the next image starts out with these pointers NULL, and the
+     * blocks stayed in the game's memory. */
+    Q2_FreeBSPVisibility();
+    /* and the level's hunk (Q3HunkAlloc_Adapter) */
+    Q2_HunkClear();
+    return errnum;
 }
 
 static int Q2BotLibraryInitialized(void)
@@ -1616,6 +1686,15 @@ static int Q2BotMoveClient(int oldclnum, int newclnum)
 
     bs = botstates[oldclnum];
     if (!bs || !bs->inuse) return Q2_BLERR_AIMOVEINACTIVECLIENT;
+    /* Gladiator's BotMoveClient refused a move onto a bot in use, this one
+     * moving to its own slot included. The state an earlier bot left in the
+     * new slot is freed: the moved one takes its place, and nothing else
+     * would free it (Q2_FreeBotStates). */
+    if (botstates[newclnum]) {
+        if (botstates[newclnum]->inuse)
+            return Q2_BLERR_AIMOVETOACTIVECLIENT;
+        FreeMemory(botstates[newclnum]);
+    }
 
     /* Real Q3 has no equivalent "move a live bot to a different client
      * slot" concept -- botstates[] is indexed by client number for the
