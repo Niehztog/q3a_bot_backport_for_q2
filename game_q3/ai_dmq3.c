@@ -3195,6 +3195,25 @@ int BotEnemyCubeCarrierVisible(bot_state_t *bs) {
 
 /*
 ==================
+BotAimHeight
+
+How high above an enemy's origin to aim.  Quake III aims 8 units up, which
+lies inside its standing player box (top at 32) and its crouched one (top at
+16, so 8 under the top).  Quake II's crouched box tops out at 4 (pmove's
+PM_CheckDuck), where those 8 units pass over it: aim at a crouched enemy 8
+under its box's top instead, where Quake III's aim meets its own crouched
+players.  A standing enemy is aimed at as before.
+==================
+*/
+static float BotAimHeight(aas_entityinfo_t *entinfo) {
+	if (entinfo->maxs[2] - 8 < 8) {
+		return entinfo->maxs[2] - 8;
+	}
+	return 8;
+}
+
+/*
+==================
 BotAimAtEnemy
 ==================
 */
@@ -3313,7 +3332,7 @@ void BotAimAtEnemy(bot_state_t *bs) {
 	if (enemyvisible) {
 		//
 		VectorCopy(entinfo.origin, bestorigin);
-		bestorigin[2] += 8;
+		bestorigin[2] += BotAimHeight(&entinfo);
 		//get the start point shooting from
 		//NOTE: the x and y projectile start offsets are ignored
 		VectorCopy(bs->origin, start);
@@ -3417,7 +3436,7 @@ void BotAimAtEnemy(bot_state_t *bs) {
 	else {
 		//
 		VectorCopy(bs->lastenemyorigin, bestorigin);
-		bestorigin[2] += 8;
+		bestorigin[2] += BotAimHeight(&entinfo);
 		//if the bot is skilled enough
 		if (aim_skill > 0.5) {
 			//do prediction shots around corners
